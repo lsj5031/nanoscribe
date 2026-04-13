@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
+from app.api.memos import router as memos_router
 from app.api.system import router as system_router
 from app.core.config import get_settings
 
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
 
     # Register API routes under /api prefix
     app.include_router(system_router, prefix="/api/system")
+    app.include_router(memos_router, prefix="/api")
 
     # Serve built SPA static files in production
     # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png

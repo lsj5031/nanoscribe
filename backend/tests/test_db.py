@@ -171,6 +171,8 @@ class TestJobsTable:
         "error_code",
         "error_message",
         "attempt_count",
+        "hotwords",
+        "enable_diarization",
         "created_at",
         "started_at",
         "finished_at",
