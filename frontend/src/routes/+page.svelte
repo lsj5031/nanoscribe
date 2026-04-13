@@ -1,6 +1,33 @@
 <script lang="ts">
   import { getCapabilities, getCapabilitiesLoading } from '$lib/stores/capabilities.svelte';
+  import { uploadFiles } from '$lib/stores/upload.svelte';
+
+  let fileInput: HTMLInputElement | undefined = $state();
+
+  function openFilePicker() {
+    fileInput?.click();
+  }
+
+  function handleFileChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (target.files?.length) {
+      uploadFiles(Array.from(target.files));
+      // Reset input so the same file can be selected again
+      target.value = '';
+    }
+  }
 </script>
+
+<!-- Hidden file input -->
+<input
+  bind:this={fileInput}
+  type="file"
+  accept=".wav,.mp3,.m4a,.aac,.webm,.ogg,.opus"
+  multiple
+  onchange={handleFileChange}
+  class="hidden"
+  aria-hidden="true"
+/>
 
 <div class="flex h-full flex-col items-center justify-center px-4">
   {#if getCapabilitiesLoading()}
@@ -60,9 +87,10 @@
         </p>
       </div>
 
-      <!-- Upload area placeholder -->
-      <div
-        class="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border-2 border-dashed border-border p-8 transition-colors hover:border-accent"
+      <!-- Upload area - clickable -->
+      <button
+        onclick={openFilePicker}
+        class="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border-2 border-dashed border-border p-8 transition-colors hover:border-accent hover:bg-accent-muted/30"
       >
         <svg
           class="h-10 w-10 text-text-muted"
@@ -77,7 +105,7 @@
         </svg>
         <p class="text-sm text-text-muted">Drop audio files here or click to upload</p>
         <p class="text-xs text-text-muted">Supported: WAV, MP3, M4A, AAC, WebM, OGG, OPUS</p>
-      </div>
+      </button>
 
       {#if getCapabilities().recording}
         <p class="text-xs text-text-muted">or record from microphone</p>
