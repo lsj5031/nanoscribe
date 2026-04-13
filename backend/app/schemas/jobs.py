@@ -23,6 +23,7 @@ class JobDetailResponse(BaseModel):
     error_message: str | None = None
     attempt_count: int = 1
     created_at: str
+    updated_at: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
 

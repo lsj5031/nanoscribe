@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
-from app.schemas.jobs import CancelResponse, JobDetailResponse
+from app.schemas.jobs import CancelResponse, JobDetailResponse, JobListResponse
 from app.services import jobs as job_service
 from app.services.sse import get_sse_manager
 
@@ -38,6 +38,7 @@ def _job_to_response(job: dict) -> JobDetailResponse:
         error_message=job.get("error_message"),
         attempt_count=job.get("attempt_count", 1),
         created_at=job["created_at"],
+        updated_at=job.get("updated_at"),
         started_at=job.get("started_at"),
         finished_at=job.get("finished_at"),
     )
@@ -54,6 +55,17 @@ async def get_job(job_id: str) -> JobDetailResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_to_response(job)
+
+
+@router.get("/memos/{memo_id}/jobs", response_model=JobListResponse)
+async def get_memo_jobs(memo_id: str) -> JobListResponse:
+    """Return all jobs for a memo, ordered by created_at descending.
+
+    VAL-JOB-017: Job list endpoint returns jobs for a memo.
+    """
+    db_path = DATA_DIR / "nanoscribe.db"
+    jobs = job_service.get_jobs_for_memo(db_path, memo_id)
+    return JobListResponse(jobs=[_job_to_response(j) for j in jobs])
 
 
 @router.get("/jobs/{job_id}/events")

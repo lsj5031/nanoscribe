@@ -493,7 +493,7 @@ def _now_iso() -> str:
     """Return current UTC time as ISO 8601 string."""
     from datetime import datetime, timezone
 
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%fZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 # Module-level singleton for model management

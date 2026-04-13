@@ -38,7 +38,7 @@ def tmp_db(tmp_path: Path) -> Path:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%fZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _insert_memo(db_path: Path, memo_id: str | None = None, status: str = "queued") -> str:
@@ -275,6 +275,7 @@ class TestGetJob:
             "error_message",
             "attempt_count",
             "created_at",
+            "updated_at",
             "started_at",
             "finished_at",
         }
@@ -433,7 +434,7 @@ class TestTimestamps:
         created = job["created_at"]
         assert created.endswith("Z")
         # Parse to verify format
-        datetime.strptime(created, "%Y-%m-%dT%H:%M:%fZ")
+        datetime.strptime(created, "%Y-%m-%dT%H:%M:%S.%fZ")
 
     def test_created_at_immutable(self, tmp_db: Path):
         memo_id = _insert_memo(tmp_db)
