@@ -163,6 +163,7 @@ class TestReprocessService:
         _insert_job(tmp_db, memo_id, status="completed", progress=1.0)
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
+        assert new_job is not None
 
         assert new_job is not None
         assert new_job["status"] == "queued"
@@ -177,6 +178,7 @@ class TestReprocessService:
         _insert_job(tmp_db, memo_id, status="completed", attempt_count=3)
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["attempt_count"] == 4
 
     def test_reprocess_preserves_hotwords(self, tmp_db: Path):
@@ -187,6 +189,7 @@ class TestReprocessService:
         _insert_job(tmp_db, memo_id, status="completed", hotwords="meeting,agenda")
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["hotwords"] == "meeting,agenda"
 
     def test_reprocess_preserves_diarization_setting(self, tmp_db: Path):
@@ -197,6 +200,7 @@ class TestReprocessService:
         _insert_job(tmp_db, memo_id, status="completed", enable_diarization=True)
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["enable_diarization"] == 1  # SQLite stores bool as int
 
     def test_reprocess_updates_memo_status_to_queued(self, tmp_db: Path):
@@ -257,6 +261,7 @@ class TestReprocessService:
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
         assert new_job is not None
+        assert new_job is not None
         assert new_job["status"] == "queued"
 
     def test_reprocess_cancelled_memo_creates_new_job(self, tmp_db: Path):
@@ -267,6 +272,7 @@ class TestReprocessService:
         _insert_job(tmp_db, memo_id, status="cancelled")
 
         new_job = jobs_service.reprocess_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job is not None
         assert new_job["status"] == "queued"
 

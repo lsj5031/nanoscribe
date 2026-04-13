@@ -151,22 +151,26 @@ class TestStateTransitions:
         # queued → preprocessing
         jobs_service.transition_job(tmp_db, job_id, "preprocessing")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "preprocessing"
         assert job["stage"] == "preprocessing"
 
         # preprocessing → transcribing
         jobs_service.transition_job(tmp_db, job_id, "transcribing")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "transcribing"
 
         # transcribing → finalizing
         jobs_service.transition_job(tmp_db, job_id, "finalizing")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "finalizing"
 
         # finalizing → completed
         jobs_service.transition_job(tmp_db, job_id, "completed")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "completed"
         assert job["progress"] == 1.0
 
@@ -176,6 +180,7 @@ class TestStateTransitions:
 
         jobs_service.fail_job(tmp_db, job_id, "ASR_FAILED", "GPU OOM")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "failed"
         assert job["error_code"] == "ASR_FAILED"
         assert job["error_message"] == "GPU OOM"
@@ -186,6 +191,7 @@ class TestStateTransitions:
 
         jobs_service.transition_job(tmp_db, job_id, "cancelled")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "cancelled"
 
     def test_cannot_transition_from_terminal(self, tmp_db: Path):
@@ -208,10 +214,12 @@ class TestProgress:
 
         jobs_service.update_progress(tmp_db, job_id, 0.3)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 0.3
 
         jobs_service.update_progress(tmp_db, job_id, 0.6)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 0.6
 
     def test_progress_cannot_decrease(self, tmp_db: Path):
@@ -220,6 +228,7 @@ class TestProgress:
 
         jobs_service.update_progress(tmp_db, job_id, 0.3)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 0.5  # Unchanged
 
     def test_progress_bounded_upper(self, tmp_db: Path):
@@ -228,6 +237,7 @@ class TestProgress:
 
         jobs_service.update_progress(tmp_db, job_id, 1.5)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 1.0
 
     def test_progress_bounded_lower(self, tmp_db: Path):
@@ -236,6 +246,7 @@ class TestProgress:
 
         jobs_service.update_progress(tmp_db, job_id, -0.1)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 0.0
 
 
@@ -250,6 +261,7 @@ class TestGetJob:
         job_id = _insert_job(tmp_db, memo_id)
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         expected_fields = {
             "id",
             "memo_id",
@@ -279,6 +291,7 @@ class TestGetJob:
         )
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "failed"
         assert job["error_code"] == "NORMALIZATION_FAILED"
         assert job["error_message"] == "ffmpeg failed"
@@ -302,6 +315,7 @@ class TestConcurrencyLimit:
 
         # Second job should remain queued
         job2_data = jobs_service.get_job(tmp_db, job2)
+        assert job2_data is not None
         assert job2_data["status"] == "queued"
 
     def test_no_active_job_returns_none(self, tmp_db: Path):
@@ -344,6 +358,7 @@ class TestAttemptCount:
         conn.close()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["attempt_count"] == 2
         assert new_job["status"] == "queued"
 
@@ -357,6 +372,7 @@ class TestAttemptCount:
         conn.close()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["attempt_count"] == 3
 
 
@@ -374,6 +390,7 @@ class TestCancel:
         assert result is True
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "cancelled"
 
     def test_cancel_completed_job_returns_false(self, tmp_db: Path):
@@ -384,6 +401,7 @@ class TestCancel:
         assert result is False
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "completed"
 
     def test_cancel_failed_job_returns_false(self, tmp_db: Path):
@@ -549,6 +567,7 @@ class TestErrorCodes:
 
         jobs_service.fail_job(tmp_db, job_id, "NORMALIZATION_FAILED", "ffmpeg failed")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["error_code"] == "NORMALIZATION_FAILED"
 
     def test_asr_failed(self, tmp_db: Path):
@@ -557,6 +576,7 @@ class TestErrorCodes:
 
         jobs_service.fail_job(tmp_db, job_id, "ASR_FAILED", "model error")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["error_code"] == "ASR_FAILED"
 
     def test_cancelled_error_code(self, tmp_db: Path):
@@ -565,6 +585,7 @@ class TestErrorCodes:
 
         jobs_service.transition_job(tmp_db, job_id, "cancelled")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "cancelled"
 
 
@@ -581,6 +602,7 @@ class TestStartupRecovery:
         jobs_service.recover_stale_jobs(tmp_db)
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] in ("queued", "failed")
 
     def test_stale_preprocessing_job_requeued(self, tmp_db: Path):
@@ -590,6 +612,7 @@ class TestStartupRecovery:
         jobs_service.recover_stale_jobs(tmp_db)
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] in ("queued", "failed")
 
     def test_completed_job_untouched(self, tmp_db: Path):
@@ -599,6 +622,7 @@ class TestStartupRecovery:
         jobs_service.recover_stale_jobs(tmp_db)
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "completed"
 
     def test_failed_job_untouched(self, tmp_db: Path):
@@ -608,6 +632,7 @@ class TestStartupRecovery:
         jobs_service.recover_stale_jobs(tmp_db)
 
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "failed"
 
     def test_no_active_jobs_recovery_is_noop(self, tmp_db: Path):
@@ -655,6 +680,7 @@ class TestStageMatchesStatus:
 
         jobs_service.transition_job(tmp_db, job_id, "preprocessing")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "preprocessing"
         assert job["stage"] == "preprocessing"
 
@@ -664,6 +690,7 @@ class TestStageMatchesStatus:
 
         jobs_service.transition_job(tmp_db, job_id, "transcribing")
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "transcribing"
         assert job["stage"] == "transcribing"
 
@@ -708,6 +735,7 @@ class TestRetryAfterCancel:
         conn.close()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
+        assert new_job is not None
         assert new_job["status"] == "queued"
         assert new_job["attempt_count"] == 2
 
@@ -727,6 +755,7 @@ class TestWorkerResilience:
 
         # Job should be failed
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["status"] == "failed"
         assert job["error_code"] == "ASR_FAILED"
 
@@ -757,6 +786,7 @@ class TestProgressThrottle:
 
         jobs_service.update_progress(tmp_db, job_id, 0.5)
         job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
         assert job["progress"] == 0.5
 
 
