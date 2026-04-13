@@ -1,0 +1,180 @@
+{
+  "groupId": "group-c-cancel-retry",
+  "testedAt": "2026-04-13T22:58:00Z",
+  "isolation": {
+    "apiBaseUrl": "http://localhost:8000",
+    "containerName": "funasr",
+    "databasePath": "/app/data/nanoscribe.db",
+    "testFixtures": ["/app/data/test-fixtures/corrupt_random.wav", "/app/data/test-fixtures/test_30s.wav", "/app/data/test-fixtures/test_5s.wav"]
+  },
+  "toolsUsed": ["curl", "docker-exec"],
+  "assertions": [
+    {
+      "id": "VAL-TRANS-004",
+      "title": "Cancel job transitions to cancelled state",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload test_30s.wav via docker exec curl", "expected": "Memo and job created with status queued", "observed": "Memo created (id=61d766f4), Job created (id=0fc60e8c) with status queued" },
+        { "action": "Poll job status until transcribing state", "expected": "Job reaches transcribing state", "observed": "Job reached transcribing state on first poll iteration" },
+        { "action": "POST /api/jobs/{id}/cancel during transcribing", "expected": "Returns 200 with status cancelled", "observed": "Returned 200 with {status: cancelled, message: Job cancelled}" },
+        { "action": "GET /api/jobs/{id} after cancel", "expected": "Status is cancelled, progress frozen", "observed": "Status: cancelled, stage: cancelled, progress: 0.1 (frozen)" },
+        { "action": "Monitor SSE stream for job.cancelled event", "expected": "SSE delivers job.cancelled terminal event", "observed": "SSE delivered: event: job.cancelled, data: {status: cancelled}" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/jobs/0fc60e8c/cancel -> 200; GET /api/jobs/0fc60e8c -> {status: cancelled}; SSE: event job.cancelled received"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRANS-005",
+      "title": "Cancel completed job returns 409",
+      "status": "pass",
+      "steps": [
+        { "action": "POST /api/jobs/{completed_job_id}/cancel on completed job", "expected": "Returns 409 with error", "observed": "Returned 409: Cannot cancel job in 'completed' state" },
+        { "action": "POST /api/jobs/{failed_job_id}/cancel on failed job", "expected": "Returns 409 with error", "observed": "Returned 409: Cannot cancel job in 'failed' state" },
+        { "action": "POST /api/jobs/{cancelled_job_id}/cancel on cancelled job", "expected": "Returns 409 with error", "observed": "Returned 409: Cannot cancel job in 'cancelled' state" },
+        { "action": "Verify job statuses unchanged after 409 attempts", "expected": "All statuses remain the same", "observed": "completed->completed, failed->failed, cancelled->cancelled" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/jobs/58cc7200/cancel -> 409; POST /api/jobs/253011f2/cancel -> 409; POST /api/jobs/0fc60e8c/cancel -> 409"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRANS-006",
+      "title": "Failed job stores error code and message",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload corrupt_random.wav via docker exec curl", "expected": "Memo and job created", "observed": "Memo (id=2c7863c1) and Job (id=253011f2) created with status queued" },
+        { "action": "Wait for job to process and fail", "expected": "Job transitions to failed state", "observed": "Job reached status: failed after ~10 seconds" },
+        { "action": "GET /api/jobs/{id} and check error fields", "expected": "status: failed, non-null error_code, non-null error_message", "observed": "status: failed, error_code: NORMALIZATION_FAILED, error_message: non-null descriptive message about ffmpeg failure" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/memos -> 200; GET /api/jobs/253011f2 -> {status: failed, error_code: NORMALIZATION_FAILED, error_message: 'Audio normalization failed: ...Invalid data found when processing input'}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRANS-007",
+      "title": "Retry creates new job with incremented attempt count",
+      "status": "pass",
+      "steps": [
+        { "action": "POST /api/memos/{failed_memo_id}/retry after first failure", "expected": "200 with new job, status queued, attempt_count=2", "observed": "Returned 200 with new job (id=172e600d), status: queued, attempt_count: 2" },
+        { "action": "Wait for retry job to fail (still corrupt audio)", "expected": "Job fails again", "observed": "Job reached status: failed, attempt_count: 2" },
+        { "action": "POST /api/memos/{failed_memo_id}/retry again", "expected": "New job with attempt_count=3", "observed": "Returned new job with status: queued, attempt_count: 3" },
+        { "action": "Verify new job starts from queued and transitions through pipeline", "expected": "Job processes from beginning", "observed": "Second retry job started as queued, then failed (corrupt audio still)" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/memos/2c7863c1/retry -> 200 {attempt_count: 2}; POST /api/memos/2c7863c1/retry -> 200 {attempt_count: 3}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRANS-008",
+      "title": "Retry active job returns 409",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload test_30s.wav via docker exec curl", "expected": "Memo and job created", "observed": "Memo (id=ea772c8b) and Job (id=299500c4) created with status queued" },
+        { "action": "Immediately POST /api/memos/{id}/retry while job is active (queued)", "expected": "Returns 409 with error about active job", "observed": "Returned 409: Cannot retry: memo has active job in 'queued' state" },
+        { "action": "Wait and verify original job completes normally", "expected": "Original job still completes", "observed": "Original job completed successfully, no duplicate job created" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/memos -> 200; POST /api/memos/ea772c8b/retry -> 409; GET /api/jobs/299500c4 -> status: completed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-006",
+      "title": "Job attempt_count increments on retry",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload corrupt_random.wav, observe initial job attempt_count=1", "expected": "attempt_count=1", "observed": "Initial job (id=253011f2) has attempt_count=1" },
+        { "action": "First retry after failure", "expected": "New job with attempt_count=2", "observed": "Retry job (id=172e600d) has attempt_count=2" },
+        { "action": "Second retry after second failure", "expected": "New job with attempt_count=3", "observed": "Second retry job has attempt_count=3" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "GET /api/jobs/253011f2 -> attempt_count: 1; POST retry -> attempt_count: 2; POST retry -> attempt_count: 3"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-007",
+      "title": "Cancel during preprocessing stops cleanly",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload test_30s.wav and immediately cancel (catching preprocessing/queued)", "expected": "Cancel returns 200, status becomes cancelled", "observed": "Cancel returned 200, job status: cancelled, stage: cancelled" },
+        { "action": "Check memo directory for partial files", "expected": "No partial normalized.wav left", "observed": "Only source.original exists in memo directory, no normalized.wav" },
+        { "action": "POST /api/memos/{id}/retry on cancelled memo", "expected": "Retry succeeds, creates new job from queued", "observed": "Retry returned 200 with new job (id=a5306e1e), status: queued, attempt_count: 2" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST cancel -> 200; docker exec ls -> only source.original; POST retry -> 200 {status: queued, attempt_count: 2}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-008",
+      "title": "Cancel during transcription stops GPU processing",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload test_30s.wav (job1) and test_5s.wav (job2) simultaneously", "expected": "Two jobs created, job2 queued behind job1", "observed": "Job1 (id=8f90f2d2) and Job2 (id=fb7dd656) created" },
+        { "action": "Wait for job1 to reach transcribing, then cancel", "expected": "Job1 cancelled during transcription", "observed": "Job1 caught in transcribing state and cancelled successfully" },
+        { "action": "Wait and check job2 begins processing after job1 cancelled", "expected": "Job2 starts and completes", "observed": "Job2 completed successfully after job1 cancellation" },
+        { "action": "Verify final states", "expected": "Job1=cancelled, Job2=completed", "observed": "Job1 final status: cancelled, Job2 final status: completed" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/jobs/8f90f2d2/cancel -> 200; GET /api/jobs/8f90f2d2 -> cancelled; GET /api/jobs/fb7dd656 -> completed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-014",
+      "title": "Retry preserves memo data",
+      "status": "pass",
+      "steps": [
+        { "action": "Note memo title and source_filename before retry", "expected": "title=group-c-cancel-preprocess, source_filename=test_30s.wav", "observed": "title=group-c-cancel-preprocess, source_filename=test_30s.wav" },
+        { "action": "Retry memo (from VAL-JOB-007 cancelled memo), wait for completion", "expected": "New job completes successfully", "observed": "Retry job (id=a5306e1e) completed with status: completed, progress: 1.0" },
+        { "action": "Check memo title and source_filename after retry", "expected": "Title and source_filename unchanged", "observed": "title=group-c-cancel-preprocess (unchanged), source_filename=test_30s.wav (unchanged)" },
+        { "action": "Verify source audio file still exists", "expected": "source.original file present and same size", "observed": "source.original exists (960078 bytes) at /app/data/memos/25dd3e16/source.original" },
+        { "action": "Also verify corrupt_random.wav memo data preserved across multiple retries", "expected": "source.original still exists after 3 attempts", "observed": "source.original exists (1024 bytes) at /app/data/memos/2c7863c1/source.original" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST retry -> 200; DB query shows title and source_filename unchanged; docker exec ls confirms source.original exists"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "30-second WAV file transcribes in under 1 second on GPU, making it very difficult to catch the transcribing state for cancellation. Had to use tight polling loops (0.1-0.5s intervals) from inside the container to minimize network latency.",
+      "resolved": true,
+      "resolution": "Used docker exec with bash loops polling at 0.1-0.5s intervals; successfully caught transcribing state on multiple attempts",
+      "affectedAssertions": ["VAL-TRANS-004", "VAL-JOB-008"]
+    },
+    {
+      "description": "Uploading test fixture files requires using docker exec curl since the files are inside the container. Uploading from host with @/dev/null workaround sends empty files.",
+      "resolved": true,
+      "resolution": "Used docker exec funasr curl with @/app/data/test-fixtures/ paths for all fixture uploads",
+      "affectedAssertions": ["VAL-TRANS-004", "VAL-TRANS-006", "VAL-TRANS-008", "VAL-JOB-007", "VAL-JOB-008"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 9 assertions: all 9 passed. Cancel during transcription works correctly (status transitions to cancelled, SSE delivers job.cancelled event, GPU freed for next job). Retry on failed/cancelled memos creates new jobs with properly incremented attempt_count. Terminal state guards work (409 for cancel on completed/failed/cancelled, 409 for retry on active). Memo metadata and source files preserved through retry cycles."
+}

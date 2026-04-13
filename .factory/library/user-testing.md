@@ -1,139 +1,61 @@
-# User Testing
+# NanoScribe User Testing Knowledge Base
 
-Testing surface, required testing skills/tools, and resource cost classification per surface.
+## Validation Surfaces
 
-## Validation Surface
+### API (curl)
+- Base URL: `http://localhost:8000`
+- Health: `GET /api/system/health`
+- Capabilities: `GET /api/system/capabilities`
+- Upload: `POST /api/memos` (multipart, `files[]`)
+- Job snapshot: `GET /api/jobs/{id}`
+- Job events: `GET /api/jobs/{id}/events` (SSE)
+- Cancel: `POST /api/jobs/{id}/cancel`
+- Retry: `POST /api/memos/{id}/retry`
+- Reprocess: `POST /api/memos/{id}/reprocess`
+- Memo list: `GET /api/memos` (paginated)
 
-### Browser UI
-- **Tool:** agent-browser (Playwright + Chromium)
-- **Setup:** App must be running inside Docker on port 8000
-- **Scope:** Library, editor, recording, settings, export, drag-drop, keyboard navigation
-- **Notes:** Chromium is at `/usr/sbin/chromium`, Playwright 1.59.1 available
+### Browser (agent-browser)
+- Not needed for m3-transcription (all assertions are API/test based)
 
-### API Endpoints
-- **Tool:** curl / pytest
-- **Setup:** App must be running inside Docker on port 8000
-- **Scope:** All `/api/*` endpoints - system, memos, segments, speakers, jobs, search, export
+## Environment Setup
 
-### Job Processing
-- **Tool:** pytest with real audio samples
-- **Setup:** App running with GPU access, models downloaded
-- **Scope:** Transcription pipeline, diarization, job lifecycle, error handling
+1. App runs inside Docker: `docker compose up -d`
+2. Container must have FunASR + tiktoken installed (Dockerfile dev stage)
+3. Models download on first transcription (~5GB from ModelScope)
+4. MODELSCOPE_CACHE must point to a writable directory (e.g., `/app/data/.modelscope_cache`)
+5. Test fixtures in `/app/data/test-fixtures/`: `test_5s.wav` (5s), `test_30s.wav` (30s), etc.
+6. GPU available via NVIDIA Container Toolkit
+
+## Known Quirks
+
+- First transcription takes 2-3 minutes (model download + GPU warmup)
+- Subsequent transcriptions are fast (~5-10s for 5s audio, ~30s for 30s audio)
+- `GET /api/memos/{id}` endpoint not yet implemented (m4-library) — use DB queries instead
+- `GET /api/memos/{id}/jobs` endpoint not yet implemented (route missing from router) — use DB queries
+- SSE reconnect sends current state as `job.state` event, not replay
+- Progress updates during transcription jump to 0.7 then to 1.0 (batch ASR processing)
+- Timestamps use malformed format `%Y-%m-%dT%H:%M:%fZ` (bug: missing `%S.` before `%f`)
+- GET /api/jobs/{id} response missing `updated_at` field (schema gap)
+- Dockerfile needs `funasr`, `modelscope`, and `tiktoken` pip-installed in venv (base image doesn't include them)
+- MODELSCOPE_CACHE must point to writable directory (host mount may be root-owned)
+- `_get_remote_code_path()` must use package `__file__` not `import model` (model.py has import-time dependency on `ctc` module)
 
 ## Validation Concurrency
 
-### Browser UI
-- **Max concurrent validators:** 3
-- **RAM per browser instance:** ~1.5-2.5 GB
-- **Available RAM:** ~10 GiB (15 GiB total, ~5 GiB baseline)
-- **Rationale:** Using 70% of available headroom: 10 GB * 0.7 = 7 GB. 3 instances * ~2 GB = 6 GB (fits). 4 instances * 2 GB = 8 GB (too close to limit with app overhead).
+- **API surface**: Max 5 concurrent validators (lightweight, no browser)
+- **Transcription is serialized**: Only one GPU job at a time, so test upload timing carefully
+- **Job state assertions share global state**: Cancel/retry assertions must run sequentially
 
-### API Endpoints
-- **Max concurrent validators:** 5 (lightweight, no meaningful resource cost)
-
-### Job Processing
-- **Max concurrent validators:** 1 (GPU-bound, single job queue)
-
-## Test Audio Fixtures
-
-Validators will need test audio files:
-- Short valid audio (~5s, multiple formats: wav, mp3, m4a, webm, ogg)
-- Medium valid audio (~30s-2min, for transcription testing)
-- Multi-speaker audio (for diarization testing)
-- Corrupt files (zero-byte, renamed text file, truncated media)
-- Unsupported format files (.txt, .pdf, .avi)
-- Large file (~100MB, for upload handling)
-
-## Flow Validator Guidance: API Endpoints
+## Flow Validator Guidance: API
 
 ### Isolation Rules
-- All assertions in this group are **read-only** (GET requests to system endpoints and code inspection).
-- No mutations to database or filesystem state.
-- Multiple API validators can run concurrently without conflict.
-- The app is running inside Docker on port 8000 (http://localhost:8000).
+- Each validator group should use its own memo/job IDs
+- Cancel and retry assertions mutate job state — group them together
+- Upload new files for each assertion group to avoid cross-contamination
+- Do not delete memos used by other groups
 
-### Shared State
-- All validators share the same running app instance.
-- Database is the same for all validators (read-only access only).
-- No test data seeding needed for M1 system endpoint tests.
-
-### Key Endpoints for M1
-- `GET /api/system/capabilities` — returns JSON capability manifest
-- `GET /api/system/health` — returns JSON health status
-- `GET /` — returns frontend HTML (200)
-- `GET /settings` — returns frontend HTML (200, SPA catch-all)
-- `GET /api` — behavior varies (may return 404 or SPA catch-all)
-
-### Code Inspection Notes
-- FTS5 migrations: `backend/app/db/migrations/001_initial_schema.sql` and `002_fix_fts5_segment_triggers.sql`
-- SPA serving: `backend/app/main.py`
-- Frontend built at `/app/frontend/build/`, symlinked to `/app/static/` in dev mode
-
-## Flow Validator Guidance: Browser UI (M2)
-
-### Isolation Rules
-- M2 browser assertions involve **upload mutations** (creating memos/jobs).
-- Multiple browser validators should NOT run concurrently since they share the database.
-- Use a unique browser session ID per validator run.
-- After testing, the database will have test memos — this is expected.
-
-### Boundaries
-- App URL: http://localhost:8000
-- Chromium binary: `/usr/sbin/chromium`
-- Test fixtures are in Docker at `/app/data/test-fixtures/`
-- The app is running inside Docker on port 8000.
-
-### M2 Upload UI Testing
-- Test drag-and-drop from the empty state home page
-- Test the file picker upload button
-- Verify the processing overlay appears after upload
-- Verify the cancel button is visible during processing
-- Verify the progress ring renders
-- For drag-and-drop testing with agent-browser, use `page.setInputFiles` or CDP drag events
-
-### Key Files
-- Upload store: `frontend/src/lib/stores/upload.svelte.ts`
-- Processing overlay: `frontend/src/lib/components/ProcessingOverlay.svelte`
-- Drop overlay: `frontend/src/lib/components/DropOverlay.svelte`
-- Upload page: `frontend/src/routes/+page.svelte`
-
-## Flow Validator Guidance: API Endpoints (M2)
-
-### Isolation Rules for M2
-- M2 API assertions **mutate** database state (create memos, jobs).
-- API validators that create memos should be run **serially** to avoid interference on shared DB state.
-- Each validator should use unique test files/filenames to avoid collision.
-- Cleanup: test memos will persist in the DB after testing — this is acceptable.
-
-### Key Endpoints for M2
-- `POST /api/memos` — multipart upload with `files[]` field
-- `GET /api/memos` — list memos (verify created memos)
-- `GET /api/memos/{id}` — get memo detail
-- `GET /api/jobs/{id}` — get job status
-
-### Test Fixtures (inside Docker at /app/data/test-fixtures/)
-- `test_5s.wav` — 5-second valid WAV (160078 bytes)
-- `test_5s.mp3` — 5-second MP3
-- `test_5s.m4a` — 5-second M4A
-- `test_5s.aac` — 5-second AAC
-- `test_5s.webm` — 5-second WebM
-- `test_5s.ogg` — 5-second OGG
-- `test_5s.opus` — 5-second OPUS
-- `test_30s.wav` — 30-second valid WAV
-- `corrupt_text.wav` — text file renamed to .wav
-- `corrupt_random.wav` — random bytes in .wav
-- `empty.mp3` — zero-byte file
-- `unsupported.txt` — plain text file
-- `unsupported.pdf` — PDF file
-- `会议 2026-04-13 (final).mp3` — Unicode/special char filename
-- `R&D intro.wav` — Ampersand in filename
-- `café recording.ogg` — Accented character in filename
-
-### Upload Response Shape
-```json
-{
-  "memos": [{"id": "...", "title": "...", "source_kind": "upload", "source_filename": "...", "status": "queued", ...}],
-  "jobs": [{"id": "...", "memo_id": "...", "job_type": "transcribe", "status": "queued", "progress": 0.0, "attempt_count": 1, ...}],
-  "errors": []
-}
-```
+### Shared State Boundaries
+- The worker queue is global (one GPU job at a time)
+- The database is shared across all groups
+- SSE manager is global
+- Test fixture files are read-only and safe to share

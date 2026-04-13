@@ -1,0 +1,202 @@
+{
+  "groupId": "group-a-job-structure",
+  "testedAt": "2026-04-13T22:45:00Z",
+  "isolation": {
+    "apiBaseUrl": "http://localhost:8000",
+    "containerName": "funasr",
+    "testFixture": "/app/data/test-fixtures/test_5s.wav",
+    "memoId": "f21c31f0-c5ae-4270-b867-94e2870d5e65",
+    "jobId1": "ddff5dd6-9782-42eb-b9ba-312e8bff2be9",
+    "jobId2": "4f60d2a8-a926-4f23-b00a-2c8076e19435"
+  },
+  "toolsUsed": ["curl", "docker-exec"],
+  "assertions": [
+    {
+      "id": "VAL-JOB-001",
+      "title": "Job row created with required fields",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "POST /api/memos with test_5s.wav",
+          "expected": "201 with memo and job objects",
+          "observed": "201 returned with memo and job objects"
+        },
+        {
+          "action": "Check job fields from upload response",
+          "expected": "id (UUID), memo_id, job_type='transcribe', status='queued', progress=0.0, attempt_count=1, created_at set, updated_at set, error_message=null",
+          "observed": "id='ddff5dd6-9782-42eb-b9ba-312e8bff2be9' (UUID), memo_id matches, job_type='transcribe', status='queued', progress=0.0, attempt_count=1, created_at='2026-04-13T22:41:014104Z', updated_at='2026-04-13T22:41:014104Z', error_message=null"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "POST /api/memos -> 201",
+        "files": ["m3-transcription/group-a/upload-response.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-004",
+      "title": "GET /api/jobs/{id} returns complete job state",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "GET /api/jobs/{existing_id}",
+          "expected": "200 with all fields: id, memo_id, job_type, status, stage, progress, attempt_count, error_code, error_message, created_at, updated_at",
+          "observed": "200 returned with fields: id, memo_id, job_type, status, stage, progress, eta_seconds, device_used, error_code, error_message, attempt_count, created_at, started_at, finished_at — BUT updated_at is MISSING from GET /api/jobs/{id} response"
+        },
+        {
+          "action": "GET /api/jobs/{nonexistent_id}",
+          "expected": "404 with error message",
+          "observed": "404 returned with {\"detail\":\"Job not found\"}"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "GET /api/jobs/ddff5dd6-9782-42eb-b9ba-312e8bff2be9 -> 200, GET /api/jobs/00000000-0000-0000-0000-000000000000 -> 404",
+        "files": ["m3-transcription/group-a/job-get-response.json", "m3-transcription/group-a/job-404-response.json"]
+      },
+      "issues": "JobDetailResponse schema (backend/app/schemas/jobs.py) does not include updated_at field. The _job_to_response() function in backend/app/api/jobs.py also does not map updated_at. The field exists in the database but is not exposed via the GET /api/jobs/{id} endpoint."
+    },
+    {
+      "id": "VAL-JOB-009",
+      "title": "Job timestamps are UTC ISO 8601",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Check created_at format from upload and GET responses",
+          "expected": "ISO 8601 with Z suffix, e.g. '2026-04-13T10:32:00Z' or '2026-04-13T10:32:00.123456Z'",
+          "observed": "created_at='2026-04-13T22:41:014104Z' — missing decimal point before fractional seconds. Should be '2026-04-13T22:41:01.4104Z'. Python datetime.fromisoformat() rejects the format."
+        },
+        {
+          "action": "Verify same format on all timestamp fields",
+          "expected": "All timestamps follow valid ISO 8601",
+          "observed": "started_at='2026-04-13T22:41:226877Z', finished_at='2026-04-13T22:41:005051Z' — all have the same formatting bug"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "All job API responses show malformed timestamps",
+        "files": ["m3-transcription/group-a/job-get-response.json"]
+      },
+      "issues": "Timestamp format string is '%Y-%m-%dT%H:%M:%fZ' but should be '%Y-%m-%dT%H:%M:%S.%fZ'. The %S (seconds) and the dot before %f (microseconds) are missing. This affects backend/app/services/jobs.py:50, backend/app/services/upload.py:38, and backend/app/services/transcription.py:496. Python's strptime %f directive outputs microseconds without a decimal separator, producing strings like '22:41:014104Z' instead of '22:41:01.410400Z'."
+    },
+    {
+      "id": "VAL-JOB-013",
+      "title": "Job created_at is immutable",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Record created_at from upload response",
+          "expected": "created_at set at creation time",
+          "observed": "created_at='2026-04-13T22:41:014104Z'"
+        },
+        {
+          "action": "GET /api/jobs/{id} after job completes",
+          "expected": "created_at unchanged",
+          "observed": "created_at='2026-04-13T22:41:014104Z' — unchanged"
+        },
+        {
+          "action": "Reprocess memo (creates second job), then check original job created_at",
+          "expected": "Original job created_at still unchanged",
+          "observed": "created_at='2026-04-13T22:41:014104Z' — still unchanged after reprocess"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "GET /api/jobs/ddff5dd6-9782-42eb-b9ba-312e8bff2be9 -> 200 (created_at same both times)",
+        "files": ["m3-transcription/group-a/job-immutability-check.txt"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-017",
+      "title": "Job list endpoint returns jobs for a memo",
+      "status": "blocked",
+      "steps": [
+        {
+          "action": "GET /api/memos/{id}/jobs",
+          "expected": "200 with JSON array of jobs",
+          "observed": "Returns HTML fallback (SPA placeholder) with 200 — endpoint not registered in API router"
+        },
+        {
+          "action": "Verify via database that 2 jobs exist for the memo",
+          "expected": "2 jobs in DB",
+          "observed": "2 jobs confirmed in DB: job1 (attempt_count=1, original) and job2 (attempt_count=2, reprocess), ordered by created_at DESC"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "GET /api/memos/f21c31f0-c5ae-4270-b867-94e2870d5e65/jobs -> 200 (HTML, not JSON)",
+        "files": ["m3-transcription/group-a/db-jobs-for-memo.txt"]
+      },
+      "issues": "The GET /api/memos/{id}/jobs endpoint is not implemented. The schema (JobListResponse) exists in backend/app/schemas/jobs.py and the service function (get_jobs_for_memo) exists in backend/app/services/jobs.py:102, but no route handler is registered in the FastAPI router. The request falls through to the SPA catch-all handler."
+    },
+    {
+      "id": "VAL-JOB-019",
+      "title": "Job stage field matches status",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check initial job state from upload response",
+          "expected": "status='queued', stage=null (allowed per spec)",
+          "observed": "status='queued', stage=null"
+        },
+        {
+          "action": "Check completed job state",
+          "expected": "status='completed', stage='completed'",
+          "observed": "status='completed', stage='completed'"
+        },
+        {
+          "action": "Check reprocess job completed state",
+          "expected": "status='completed', stage='completed'",
+          "observed": "status='completed', stage='completed'"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "Multiple GET /api/jobs/{id} calls show consistent status/stage",
+        "files": ["m3-transcription/group-a/job-get-response.json", "m3-transcription/group-a/reprocess-completed-job.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOB-020",
+      "title": "Transcript revision starts at 1",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Upload test file and wait for transcription to complete",
+          "expected": "memo transcript_revision = 1 after completion",
+          "observed": "transcript_revision = 1 in database"
+        },
+        {
+          "action": "Reprocess memo and wait for completion",
+          "expected": "transcript_revision reset to 1",
+          "observed": "transcript_revision = 1 after reprocess completion"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "Database query via docker exec",
+        "files": ["m3-transcription/group-a/db-transcript-revision.txt"]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [
+    {
+      "description": "GET /api/memos/{id}/jobs endpoint not implemented — route handler missing from FastAPI router despite schema and service layer existing",
+      "affectedAssertions": ["VAL-JOB-017"],
+      "quickFixAttempted": "Verified via database query that data layer supports the functionality"
+    }
+  ],
+  "summary": "Tested 7 assertions: 4 passed, 2 failed, 1 blocked. VAL-JOB-004 fails because GET /api/jobs/{id} response is missing updated_at field. VAL-JOB-009 fails because all timestamps use malformed format '%Y-%m-%dT%H:%M:%fZ' (missing seconds and decimal before microseconds). VAL-JOB-017 blocked because GET /api/memos/{id}/jobs endpoint is not implemented."
+}

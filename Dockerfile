@@ -14,7 +14,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && corepack prepare pnpm@latest --activate \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dev tools into the existing venv
+# Install FunASR and Python dev tools into the existing venv
+RUN /app/venv/bin/pip install --no-cache-dir \
+    funasr \
+    modelscope \
+    tiktoken
+
 RUN /app/venv/bin/pip install --no-cache-dir \
     ruff \
     ty \

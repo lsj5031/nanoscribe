@@ -52,11 +52,15 @@ def _get_remote_code_path() -> str | None:
     It requires trust_remote_code=True and an explicit path to the model implementation.
     """
     try:
-        import funasr.models.fun_asr_nano.model as _mod
+        import funasr.models.fun_asr_nano
 
-        path = str(Path(_mod.__file__))
-        logger.info("FunASR Nano remote_code path: %s", path)
-        return path
+        model_py = Path(funasr.models.fun_asr_nano.__file__).parent / "model.py"
+        if model_py.exists():
+            path = str(model_py)
+            logger.info("FunASR Nano remote_code path: %s", path)
+            return path
+        logger.warning("FunASR Nano model.py not found at %s", model_py)
+        return None
     except (ImportError, AttributeError):
         logger.warning("Could not locate FunASR Nano model.py")
         return None
