@@ -6,7 +6,7 @@ IMAGE ?= funasr
 BASE_IMAGE ?= glm-asr-glm-asr:latest
 HOST_PORT ?= 8000
 
-help:
+help: ## Show this help
 	@echo "NanoScribe Docker Commands"
 	@echo ""
 	@echo "Usage: make [target]"
@@ -19,7 +19,7 @@ help:
 	@echo "  run             Run a one-shot readiness check"
 	@echo "  smoke           Verify funasr and modelscope imports"
 	@echo "  check           Run all quality checks inside Docker"
-	@echo "  backend-check   Run backend quality checks (ruff, ty)"
+	@echo "  backend-check   Run backend quality checks (ruff format, ruff check, ty check)"
 	@echo "  frontend-check  Run frontend quality checks (svelte-check, prettier)"
 	@echo "  hooks-install   Install pre-commit hooks"
 	@echo "  clean           Remove the built image"
@@ -49,26 +49,35 @@ smoke:
 	docker run --rm $(IMAGE) python -c "import funasr, modelscope; print('ok')"
 
 check:
-	docker compose exec funasr bash -c "cd /app/backend && ruff format --check . && ruff check . && ty check . && cd /app/frontend && pnpm check && pnpm format:check"
+	@echo "=== Running all quality checks inside Docker ==="
+	@$(MAKE) backend-check
+	@$(MAKE) frontend-check
+	@echo "=== All quality checks passed ==="
 
 backend-check:
-	docker compose exec funasr bash -c "cd /app/backend && ruff format --check . && ruff check . && ty check ."
+	@echo "--- Backend: ruff format --check ---"
+	docker compose exec funasr bash -c "cd /app/backend && ruff format --check ."
+	@echo "--- Backend: ruff check ---"
+	docker compose exec funasr bash -c "cd /app/backend && ruff check ."
+	@echo "--- Backend: ty check ---"
+	docker compose exec funasr bash -c "cd /app/backend && ty check ."
 
 frontend-check:
-	docker compose exec funasr bash -c "cd /app/frontend && pnpm check && pnpm format:check"
+	@echo "--- Frontend: svelte-check ---"
+	docker compose exec funasr bash -c "cd /app/frontend && pnpm check"
+	@echo "--- Frontend: prettier format check ---"
+	docker compose exec funasr bash -c "cd /app/frontend && pnpm format:check"
 
 hooks-install:
 	@echo "Installing pre-commit hooks..."
-	@if [ ! -d .git/hooks ]; then mkdir -p .git/hooks; fi
-	@cat > .git/hooks/pre-commit << 'HOOK'
-#!/bin/bash
-set -e
-echo "Running pre-commit checks..."
-docker compose exec funasr bash -c "cd /app/backend && ruff format --check . && ruff check ."
-echo "Pre-commit checks passed."
-HOOK
+	@mkdir -p .git/hooks
+	@cp scripts/pre-commit-hook.sh .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
-	@echo "Pre-commit hook installed."
+	@echo "Pre-commit hook installed to .git/hooks/pre-commit"
+	@echo "  - Trailing whitespace removal"
+	@echo "  - End-of-file newline fix"
+	@echo "  - Backend: ruff format --check, ruff check (Docker)"
+	@echo "  - Frontend: prettier format:check (Docker)"
 
 clean:
 	docker compose down || true
