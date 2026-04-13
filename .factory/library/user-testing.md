@@ -30,12 +30,8 @@
 
 - First transcription takes 2-3 minutes (model download + GPU warmup)
 - Subsequent transcriptions are fast (~5-10s for 5s audio, ~30s for 30s audio)
-- `GET /api/memos/{id}` endpoint not yet implemented (m4-library) — use DB queries instead
-- `GET /api/memos/{id}/jobs` endpoint not yet implemented (route missing from router) — use DB queries
 - SSE reconnect sends current state as `job.state` event, not replay
 - Progress updates during transcription jump to 0.7 then to 1.0 (batch ASR processing)
-- Timestamps use malformed format `%Y-%m-%dT%H:%M:%fZ` (bug: missing `%S.` before `%f`)
-- GET /api/jobs/{id} response missing `updated_at` field (schema gap)
 - Dockerfile needs `funasr`, `modelscope`, and `tiktoken` pip-installed in venv (base image doesn't include them)
 - MODELSCOPE_CACHE must point to writable directory (host mount may be root-owned)
 - `_get_remote_code_path()` must use package `__file__` not `import model` (model.py has import-time dependency on `ctc` module)

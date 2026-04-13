@@ -1,50 +1,31 @@
 {
   "milestone": "m3-transcription",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "assertionsSummary": {
     "total": 35,
-    "passed": 32,
-    "failed": 2,
-    "blocked": 1
+    "passed": 35,
+    "failed": 0,
+    "blocked": 0
   },
   "passedAssertions": [
     "VAL-TRANS-001", "VAL-TRANS-002", "VAL-TRANS-003",
     "VAL-TRANS-004", "VAL-TRANS-005", "VAL-TRANS-006", "VAL-TRANS-007", "VAL-TRANS-008",
     "VAL-TRANS-009", "VAL-TRANS-010", "VAL-TRANS-011", "VAL-TRANS-012", "VAL-TRANS-013",
     "VAL-JOB-001", "VAL-JOB-002", "VAL-JOB-003",
-    "VAL-JOB-005", "VAL-JOB-006", "VAL-JOB-007", "VAL-JOB-008",
-    "VAL-JOB-010", "VAL-JOB-011", "VAL-JOB-012",
+    "VAL-JOB-004", "VAL-JOB-005", "VAL-JOB-006", "VAL-JOB-007", "VAL-JOB-008",
+    "VAL-JOB-009", "VAL-JOB-010", "VAL-JOB-011", "VAL-JOB-012",
     "VAL-JOB-013", "VAL-JOB-014", "VAL-JOB-015", "VAL-JOB-016",
-    "VAL-JOB-018", "VAL-JOB-019", "VAL-JOB-020", "VAL-JOB-021", "VAL-JOB-022"
+    "VAL-JOB-017", "VAL-JOB-018", "VAL-JOB-019", "VAL-JOB-020", "VAL-JOB-021", "VAL-JOB-022"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-JOB-004",
-      "reason": "GET /api/jobs/{id} response missing updated_at field. The JobDetailResponse schema in backend/app/schemas/jobs.py does not include updated_at. The _job_to_response() mapping function in backend/app/api/jobs.py also omits it."
-    },
-    {
-      "id": "VAL-JOB-009",
-      "reason": "Timestamps use malformed format '%Y-%m-%dT%H:%M:%fZ' instead of '%Y-%m-%dT%H:%M:%S.%fZ'. Missing %S (seconds) and decimal separator before %f (microseconds). Produces strings like '22:41:014104Z' instead of '22:41:01.410400Z'. Affects multiple files: backend/app/services/jobs.py, backend/app/services/upload.py, backend/app/services/transcription.py."
-    }
-  ],
-  "blockedAssertions": [
-    {
-      "id": "VAL-JOB-017",
-      "blockedBy": "GET /api/memos/{id}/jobs endpoint not implemented. Schema (JobListResponse) and service function (get_jobs_for_memo) exist, but no route handler is registered in the FastAPI router. Request falls through to SPA catch-all."
-    }
-  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
   "appliedUpdates": [
     {
       "target": "user-testing.md",
-      "description": "Created initial user-testing knowledge base with API surface documentation, environment setup notes, validation concurrency guidance, and flow validator guidance for API surface",
-      "source": "setup"
-    },
-    {
-      "target": "services.yaml",
-      "description": "No changes needed - services.yaml was accurate",
-      "source": "setup"
+      "description": "Removed known quirks for VAL-JOB-004, VAL-JOB-009, VAL-JOB-017 which are now fixed",
+      "source": "re-test"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/m3-transcription/user-testing/synthesis.json (round 1)"
 }
