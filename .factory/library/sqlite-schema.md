@@ -26,10 +26,22 @@ The database uses SQLite with WAL mode and foreign key enforcement. Migrations a
 ### FTS5 Sync Triggers
 
 Six triggers keep `memos_fts` in sync:
-- `trg_memos_fts_insert/update/delete`: Sync memo title changes
-- `trg_segments_fts_insert/update/delete`: Sync segment text changes
+- `trg_memos_fts_insert/update/delete`: Sync memo title changes (use `memos.rowid`)
+- `trg_segments_fts_insert/update/delete`: Sync segment text changes (use `segments.rowid` — fixed in migration 002)
+
+**Important:** Segment triggers use the *segment's own rowid* (not the memo's rowid) so each segment gets its own independent FTS entry. This was fixed in migration 002 (`002_fix_fts5_segment_triggers.sql`) which drops and recreates the segment triggers from migration 001.
 
 Note: FTS5 uses `content=''` (contentless), so delete operations use the `INSERT INTO memos_fts(memos_fts, rowid, ...) VALUES ('delete', ...)` pattern.
+
+### FTS5 Search Query Pattern
+
+To search segments and map results back to memos, JOIN on `segments.rowid`:
+```sql
+SELECT s.memo_id, s.text
+FROM memos_fts f
+JOIN segments s ON s.rowid = f.rowid
+WHERE memos_fts MATCH ?
+```
 
 ## How to Add Migrations
 

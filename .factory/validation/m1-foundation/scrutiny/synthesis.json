@@ -1,32 +1,23 @@
 {
   "milestone": "m1-foundation",
-  "round": 2,
-  "status": "fail",
+  "round": 3,
+  "status": "pass",
   "validatorsRun": {
-    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x -v'", "exitCode": 0, "detail": "65 passed in 3.31s" },
+    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x -v'", "exitCode": 0, "detail": "67 passed in 3.82s" },
     "typecheck": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ty check .'", "exitCode": 0, "detail": "All checks passed" },
     "lint": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ruff format --check . && ruff check .'", "exitCode": 0, "detail": "18 files formatted, all checks passed" },
     "frontend-check": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/frontend && pnpm check'", "exitCode": 0, "detail": "0 errors, 0 warnings" },
     "frontend-format": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/frontend && pnpm format:check'", "exitCode": 0, "detail": "All matched files use Prettier code style" }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 4,
-    "failed": 1,
-    "failedFeatures": ["m1-sqlite-schema"],
-    "newReviewsThisRound": 0,
-    "note": "Re-run: fix-fts5-triggers feature is still pending (not implemented). No new completed features to review. Blocking issue from round 1 persists."
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "failedFeatures": [],
+    "newReviewsThisRound": 1,
+    "note": "Re-run round 3: Reviewed fix-fts5-triggers which addresses the blocking FTS5 issue from rounds 1-2. Fix passes review — blocking issue resolved."
   },
-  "blockingIssues": [
-    {
-      "featureId": "m1-sqlite-schema",
-      "severity": "blocking",
-      "description": "FTS5 segment triggers use the memo's rowid as the FTS rowid. In a contentless FTS5 table (content=''), each rowid maps to exactly one entry. When a second segment is inserted for the same memo, the trigger deletes the existing FTS entry and replaces it with only the new segment's text. This means only the LAST segment per memo is searchable — all previous segments' text is lost from the FTS index. Example: if memo has segments 'Hello world' and 'Goodbye world', only 'Goodbye world' will be findable via FTS MATCH.",
-      "file": "backend/app/db/migrations/001_initial_schema.sql",
-      "line": 116,
-      "suggestedFix": "Create migration 002 that drops and recreates the FTS triggers to use the segment's own rowid instead of the memo's rowid. Each segment gets its own FTS entry. Update test_fts5_basic_search to insert multiple segments per memo and verify ALL are searchable via FTS MATCH."
-    }
-  ],
+  "blockingIssues": [],
   "nonBlockingIssues": [
     {
       "featureId": "m1-dockerfile-dev-env",
@@ -74,7 +65,13 @@
       "severity": "non_blocking"
     }
   ],
-  "appliedUpdates": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated .factory/library/sqlite-schema.md to document that segment FTS5 triggers use segment.rowid (not memo.rowid), migration 002 fix, and the FTS5 search JOIN query pattern",
+      "sourceFeature": "fix-fts5-triggers"
+    }
+  ],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
@@ -97,25 +94,13 @@
   ],
   "rejectedObservations": [
     {
-      "observation": "Worker created library doc .factory/library/sqlite-schema.md but it wasn't committed",
-      "reason": "duplicate from round 1"
+      "observation": "Migration 001 still contains buggy triggers (correct behavior for migration immutability)",
+      "reason": "Migrations should never be modified after being applied; this is by design"
     },
     {
-      "observation": "services.yaml doesn't mention Makefile targets as canonical way to run checks",
-      "reason": "duplicate from round 1"
-    },
-    {
-      "observation": "Pre-commit hook file hygiene convention not in AGENTS.md",
-      "reason": "duplicate from round 1"
-    },
-    {
-      "observation": "Ruff lint rules not documented in AGENTS.md",
-      "reason": "duplicate from round 1"
-    },
-    {
-      "observation": "Capabilities store reactivity pattern nuances",
-      "reason": "duplicate from round 1"
+      "observation": "Worker followed backend-worker skill procedure correctly",
+      "reason": "Observation about skill compliance, no action needed"
     }
   ],
-  "previousRound": ".factory/validation/m1-foundation/scrutiny/synthesis.json (round 1)"
+  "previousRound": ".factory/validation/m1-foundation/scrutiny/synthesis.json (round 2)"
 }
