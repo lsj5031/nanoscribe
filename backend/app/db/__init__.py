@@ -24,13 +24,29 @@ def check_db_health(db_path: str | Path) -> str:
 
     Returns:
         "ok" if the database is healthy, "error" otherwise.
+
+    VAL-SYS-004: sqlite3.connect() creates a new empty file if the DB doesn't
+    exist, so we must explicitly check the file exists AND has the expected
+    schema (e.g., 'memos' table) before reporting healthy.
     """
     try:
+        path = Path(db_path)
+        if not path.exists():
+            return "error"
+
         conn = sqlite3.connect(str(db_path))
-        result = conn.execute("PRAGMA integrity_check").fetchone()
-        conn.close()
-        if result and result[0] == "ok":
-            return "ok"
-        return "error"
+        try:
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            if not result or result[0] != "ok":
+                return "error"
+
+            # Verify expected schema tables exist
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='memos'").fetchall()
+            if not tables:
+                return "error"
+        finally:
+            conn.close()
+
+        return "ok"
     except Exception:
         return "error"

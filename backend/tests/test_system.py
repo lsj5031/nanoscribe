@@ -69,10 +69,10 @@ class TestHealthEndpoint:
         assert resp.json()["backend"] == "ok"
 
     def test_db_is_ok_when_accessible(self, client, setup_data_dir):
-        """DB reports ok when SQLite file is accessible."""
+        """DB reports ok when SQLite file is accessible and has expected schema."""
         db_path = setup_data_dir / "nanoscribe.db"
         conn = sqlite3.connect(str(db_path))
-        conn.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER)")
+        conn.execute("CREATE TABLE IF NOT EXISTS memos (id TEXT PRIMARY KEY)")
         conn.close()
 
         resp = client.get("/api/system/health")
@@ -101,6 +101,45 @@ class TestHealthDegradation:
         resp = client.get("/api/system/health")
         assert resp.status_code == 200
         assert resp.json()["db"] == "error"
+
+    def test_health_reports_db_error_when_file_missing(self, client, setup_data_dir):
+        """Health reports db error when the DB file does not exist.
+
+        sqlite3.connect() would create a new empty file, but check_db_health()
+        must detect that the file was not there and report error.
+        """
+        db_path = setup_data_dir / "nanoscribe.db"
+        assert not db_path.exists(), "DB file should not exist for this test"
+
+        resp = client.get("/api/system/health")
+        assert resp.status_code == 200
+        assert resp.json()["db"] == "error"
+
+    def test_health_reports_db_error_when_empty_schema(self, client, setup_data_dir):
+        """Health reports db error when DB exists but has no expected tables.
+
+        An empty SQLite database (no memos table) indicates the schema
+        was not properly initialized.
+        """
+        db_path = setup_data_dir / "nanoscribe.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS wrong_table (id INTEGER)")
+        conn.close()
+
+        resp = client.get("/api/system/health")
+        assert resp.status_code == 200
+        assert resp.json()["db"] == "error"
+
+    def test_health_reports_db_ok_with_correct_schema(self, client, setup_data_dir):
+        """Health reports db ok when DB has the expected memos table."""
+        db_path = setup_data_dir / "nanoscribe.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS memos (id TEXT PRIMARY KEY)")
+        conn.close()
+
+        resp = client.get("/api/system/health")
+        assert resp.status_code == 200
+        assert resp.json()["db"] == "ok"
 
     def test_health_still_200_when_storage_readonly(self, client, setup_data_dir):
         """Health returns 200 even when storage is read-only."""
