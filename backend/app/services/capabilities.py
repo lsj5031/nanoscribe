@@ -33,12 +33,10 @@ def _detect_gpu() -> tuple[bool, str]:
 
 
 def _detect_model_ready() -> bool:
-    """Check whether the ASR model is loaded and the pipeline can accept jobs.
+    """Check whether the ASR model is loaded and the pipeline can accept jobs."""
+    from app.services.transcription import is_model_ready
 
-    Currently returns False until the model-loading lifecycle (M3) is implemented.
-    """
-    # TODO (M3): Check if AutoModel is actually loaded in app state
-    return False
+    return is_model_ready()
 
 
 def get_capabilities() -> dict:
