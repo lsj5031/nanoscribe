@@ -211,3 +211,63 @@ async def retry_memo(memo_id: str) -> JobDetailResponse:
         )
 
     return _job_to_response(new_job)
+
+
+@router.post("/memos/{memo_id}/reprocess", response_model=JobDetailResponse, status_code=201)
+async def reprocess_memo(memo_id: str, confirm: bool = False) -> JobDetailResponse:
+    """Reprocess a memo's transcription — creates a new transcription job.
+
+    Unlike retry (which only works on failed/cancelled jobs), reprocess works
+    on completed memos too. This allows re-transcription with updated settings.
+
+    If the transcript has been edited (transcript_revision > 1), the caller
+    must pass confirm=true to acknowledge that edits will be overwritten.
+    Without confirmation, returns 409.
+    """
+    db_path = DATA_DIR / "nanoscribe.db"
+
+    # Check that memo exists
+    from app.db import get_connection
+
+    conn = get_connection(db_path)
+    try:
+        memo = conn.execute(
+            "SELECT id, status, transcript_revision FROM memos WHERE id = ?",
+            (memo_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if memo is None:
+        raise HTTPException(status_code=404, detail="Memo not found")
+
+    transcript_revision = memo[2]
+
+    # Guard: if transcript has been edited, require confirmation
+    if transcript_revision > 1 and not confirm:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Transcript has been edited (revision {transcript_revision}). "
+            "Pass confirm=true to acknowledge that edits will be overwritten.",
+        )
+
+    # Check latest job status
+    latest_jobs = job_service.get_jobs_for_memo(db_path, memo_id)
+    if latest_jobs:
+        latest_status = latest_jobs[0]["status"]
+        from app.services.jobs import ACTIVE_STATES
+
+        if latest_status in ACTIVE_STATES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot reprocess: memo has active job in '{latest_status}' state",
+            )
+
+    new_job = job_service.reprocess_memo(db_path, memo_id)
+    if new_job is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot reprocess: memo has no existing jobs",
+        )
+
+    return _job_to_response(new_job)

@@ -395,6 +395,65 @@ def retry_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
     return new_job
 
 
+def reprocess_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
+    """Reprocess a memo by creating a new transcription job.
+
+    Unlike retry (which only works on failed/cancelled), reprocess works on
+    any memo with a terminal job (including completed). This lets users
+    re-transcribe with updated settings or after model updates.
+
+    Returns the new job dict, or None if:
+    - memo has no existing jobs
+    - memo has an active (non-terminal) job
+
+    The caller is responsible for checking transcript_revision before calling
+    this function (to prevent silent overwrite of user edits).
+    """
+    conn = get_connection(db_path)
+    try:
+        # Get the latest job for this memo
+        latest_job = conn.execute(
+            "SELECT status, attempt_count, hotwords, enable_diarization "
+            "FROM jobs WHERE memo_id = ? ORDER BY created_at DESC LIMIT 1",
+            (memo_id,),
+        ).fetchone()
+
+        if latest_job is None:
+            return None
+
+        latest_status = latest_job[0]
+
+        # Cannot reprocess if an active job is running
+        if latest_status in ACTIVE_STATES:
+            return None
+
+        attempt_count = latest_job[1]
+        hotwords = latest_job[2]
+        enable_diarization = latest_job[3]
+
+        new_attempt = attempt_count + 1
+    finally:
+        conn.close()
+
+    new_job = create_job(
+        db_path, memo_id, attempt_count=new_attempt, hotwords=hotwords, enable_diarization=enable_diarization
+    )
+
+    # Update memo status to queued and reset transcript_revision
+    conn = get_connection(db_path)
+    try:
+        now = _now_iso()
+        conn.execute(
+            "UPDATE memos SET status = 'queued', transcript_revision = 0, updated_at = ? WHERE id = ?",
+            (now, memo_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return new_job
+
+
 def recover_stale_jobs(db_path: str | Path) -> int:
     """Recover stale active jobs on startup.
 
