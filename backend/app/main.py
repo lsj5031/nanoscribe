@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
 from app.api.jobs import router as jobs_router
+from app.api.library import router as library_router
 from app.api.memos import router as memos_router
 from app.api.system import router as system_router
 from app.core.config import get_settings
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
 
     # Register API routes under /api prefix
     app.include_router(system_router, prefix="/api/system")
+    app.include_router(library_router, prefix="/api")
     app.include_router(memos_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
 
