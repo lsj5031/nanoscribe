@@ -1,0 +1,57 @@
+{
+  "featureId": "m2-upload-ui",
+  "reviewedAt": "2026-04-14T00:00:00.000Z",
+  "commitId": "5bc60ca",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The upload UI implementation is well-structured and covers the core requirements: global drag-and-drop (via svelte:window), file input button, processing overlay with SVG progress ring, cancel/dismiss actions, and error toast for unsupported files. The component architecture is clean with proper separation of concerns (store, overlay components, layout integration). The worker followed the skill procedure correctly and verified with svelte-check, Prettier, backend tests, and interactive browser checks.",
+    "issues": [
+      {
+        "file": "frontend/src/lib/stores/upload.svelte.ts",
+        "line": 117,
+        "severity": "non_blocking",
+        "description": "Multiple file uploads: when more than one file is uploaded, only the first file's job gets progress tracking via SSE. The remaining files are uploaded but their processing overlay is never shown. This is a known limitation (noted in the handoff) and acceptable for m2 since VAL-INTAKE-015 specifically mentions 'After a single-file upload'. However, for batch uploads there is no user feedback for files 2..N."
+      },
+      {
+        "file": "frontend/src/lib/stores/upload.svelte.ts",
+        "line": 149,
+        "severity": "non_blocking",
+        "description": "The SSE endpoint `/api/jobs/{id}/events` and cancel endpoint `/api/jobs/{id}/cancel` are consumed by the frontend but do not yet exist in the backend. This is expected — these endpoints are part of the transcription pipeline (m3 milestone). The frontend gracefully handles SSE errors (onerror disconnects, user can still cancel locally). Not blocking for m2-intake since the upload endpoint itself works."
+      },
+      {
+        "file": "frontend/src/lib/components/ProcessingOverlay.svelte",
+        "line": 44,
+        "severity": "non_blocking",
+        "description": "The overlay div has `onkeydown` for Escape dismissal on terminal states, but the div itself is not focusable (no tabindex). Keyboard users cannot focus the overlay to trigger the Escape handler. Adding `tabindex=\"-1\"` and auto-focusing the overlay when it appears would improve accessibility. The svelte-ignore a11y_no_static_element_interactions comment acknowledges this but doesn't resolve it."
+      },
+      {
+        "file": "frontend/src/lib/components/ProcessingOverlay.svelte",
+        "line": 7,
+        "severity": "non_blocking",
+        "description": "The overlay does not trap focus — when it's visible, keyboard users can still Tab to elements behind it. A proper modal should use focus trapping and `role=\"dialog\"` with `aria-modal=\"true\"`. Minor for m2 but should be addressed before production."
+      },
+      {
+        "file": "frontend/src/lib/components/DropOverlay.svelte",
+        "line": 35,
+        "severity": "non_blocking",
+        "description": "Non-file drag content (text selections, URLs) is not explicitly filtered. The `handleDrop` checks `e.dataTransfer?.files?.length` which would be 0 for non-file drags, so it won't trigger uploads — but the visual drop overlay still appears during drag-over of non-files. Checking `e.dataTransfer.types` in handleDragEnter could prevent showing the overlay for non-file drags. Per VAL-INTAKE-008 evidence requirement 5: 'Drag non-file content → no upload, no error' — this passes functionally but shows a misleading visual."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The upload store uses module-level `$state` (Svelte 5 runes) exported via getter functions rather than the class-based pattern documented in AGENTS.md (which shows `class Foo { bar = $state(0); } export const foo = new Foo()`). Both approaches work, but the module-level getter pattern is actually more appropriate for singletons. AGENTS.md's 'Example pattern' section could be clarified to show both patterns as acceptable.",
+      "evidence": "AGENTS.md 'Frontend State Management' section shows class-based pattern. upload.svelte.ts uses module-level `let state = $state<UploadState>(...)` with `export function getActiveUpload()`. The class pattern is shown as the only example."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The SSE endpoints `/api/jobs/{id}/events` and `/api/jobs/{id}/cancel` are referenced by the frontend but not yet implemented in the backend. The upload UI's progress tracking depends on these endpoints being available in a future milestone. This dependency chain should be documented in the library.",
+      "evidence": "upload.svelte.ts:149 connects to EventSource at `/api/jobs/${jobId}/events`, upload.svelte.ts:211 calls `fetch('/api/jobs/${state.active.jobId}/cancel')`. No matching backend routes found via grep of backend/app/."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The upload UI implementation is solid and meets the m2-intake requirements. The four components (upload store, DropOverlay, ProcessingOverlay, ErrorToast) are well-structured with clean separation of concerns. Drag-and-drop works globally via svelte:window events with the dragCounter pattern. The processing overlay shows immediately after single-file upload with a proper SVG progress ring, stage labels, and cancel/dismiss actions. Error toasts handle unsupported formats gracefully. All quality gates passed (svelte-check, Prettier, backend tests). The non-blocking issues are: (1) batch uploads only track the first file's progress, (2) the SSE/cancel backend endpoints don't exist yet (expected — part of m3 pipeline), (3) minor accessibility gaps in the processing overlay (no focus trapping, no dialog role). None of these block user testing of the upload flow."
+}

@@ -75,7 +75,8 @@ def create_app() -> FastAPI:
     else:
         # Placeholder HTML when no SPA is built yet (dev mode)
         @app.get("/")
-        async def serve_placeholder() -> HTMLResponse:
+        @app.get("/{path:path}", response_model=None)
+        async def serve_placeholder(path: str = "") -> HTMLResponse:
             """Serve a placeholder page when the SPA is not built."""
             html = "<!DOCTYPE html><html><head><title>NanoScribe</title></head>"
             html += "<body><h1>NanoScribe</h1><p>Frontend not built. Running in dev mode.</p></body></html>"
