@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
@@ -27,18 +27,29 @@ def create_app() -> FastAPI:
     app.include_router(system_router, prefix="/api/system")
 
     # Serve built SPA static files in production
-    if STATIC_DIR.is_dir() and any(STATIC_DIR.iterdir()):
-        # Mount static assets (JS, CSS, etc.)
-        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png
+    if STATIC_DIR.is_dir() and (STATIC_DIR / "200.html").exists():
+        # Mount immutable assets at /_app — these have content-hashed filenames
+        app.mount("/_app", StaticFiles(directory=STATIC_DIR / "_app"), name="spa-assets")
 
-        # Serve index.html for the SPA catch-all (root and non-/api routes)
-        @app.get("/")
-        async def serve_index() -> FileResponse:
-            """Serve the SPA index page."""
-            return FileResponse(STATIC_DIR / "index.html")
+        # Serve static files from the build output (favicon, etc.)
+        app.mount("/static-assets", StaticFiles(directory=STATIC_DIR), name="static-root")
+
+        # SPA fallback: serve 200.html for root and all non-/api routes
+        @app.get("/", response_model=None)
+        @app.get("/{path:path}", response_model=None)
+        async def serve_spa(request: Request, path: str = "") -> Response:
+            """Serve the SPA. API routes are handled before this catch-all."""
+            # Check if a static file matches the path (e.g. favicon.png)
+            candidate = STATIC_DIR / path
+            if path and candidate.is_file():
+                return FileResponse(candidate)
+
+            # Otherwise serve the SPA fallback for client-side routing
+            return FileResponse(STATIC_DIR / "200.html")
 
     else:
-        # Placeholder HTML when no SPA is built yet
+        # Placeholder HTML when no SPA is built yet (dev mode)
         @app.get("/")
         async def serve_placeholder() -> HTMLResponse:
             """Serve a placeholder page when the SPA is not built."""

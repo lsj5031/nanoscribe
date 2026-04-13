@@ -1,0 +1,12 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+node_modules
+.pnpm-store
+
+# Build
+build
+.svelte-kit
+
+# Misc
+.DS_Store
