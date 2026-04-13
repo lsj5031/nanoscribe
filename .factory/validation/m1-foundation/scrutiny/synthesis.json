@@ -1,9 +1,9 @@
 {
   "milestone": "m1-foundation",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
-    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x -v'", "exitCode": 0, "detail": "65 passed in 3.37s" },
+    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x -v'", "exitCode": 0, "detail": "65 passed in 3.31s" },
     "typecheck": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ty check .'", "exitCode": 0, "detail": "All checks passed" },
     "lint": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ruff format --check . && ruff check .'", "exitCode": 0, "detail": "18 files formatted, all checks passed" },
     "frontend-check": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/frontend && pnpm check'", "exitCode": 0, "detail": "0 errors, 0 warnings" },
@@ -13,7 +13,9 @@
     "total": 5,
     "passed": 4,
     "failed": 1,
-    "failedFeatures": ["m1-sqlite-schema"]
+    "failedFeatures": ["m1-sqlite-schema"],
+    "newReviewsThisRound": 0,
+    "note": "Re-run: fix-fts5-triggers feature is still pending (not implemented). No new completed features to review. Blocking issue from round 1 persists."
   },
   "blockingIssues": [
     {
@@ -22,7 +24,7 @@
       "description": "FTS5 segment triggers use the memo's rowid as the FTS rowid. In a contentless FTS5 table (content=''), each rowid maps to exactly one entry. When a second segment is inserted for the same memo, the trigger deletes the existing FTS entry and replaces it with only the new segment's text. This means only the LAST segment per memo is searchable — all previous segments' text is lost from the FTS index. Example: if memo has segments 'Hello world' and 'Goodbye world', only 'Goodbye world' will be findable via FTS MATCH.",
       "file": "backend/app/db/migrations/001_initial_schema.sql",
       "line": 116,
-      "suggestedFix": "Use unique rowids per segment (the segment's own rowid) in the FTS triggers instead of the memo's rowid. Query results can be aggregated by memo_id at search time. Update test_fts5_basic_search and test_fts5_content_sync_with_memos to test trigger-driven sync with multiple segments per memo."
+      "suggestedFix": "Create migration 002 that drops and recreates the FTS triggers to use the segment's own rowid instead of the memo's rowid. Each segment gets its own FTS entry. Update test_fts5_basic_search to insert multiple segments per memo and verify ALL are searchable via FTS MATCH."
     }
   ],
   "nonBlockingIssues": [
@@ -96,24 +98,24 @@
   "rejectedObservations": [
     {
       "observation": "Worker created library doc .factory/library/sqlite-schema.md but it wasn't committed",
-      "reason": "The file already exists in .factory/library/ — this is already documented"
+      "reason": "duplicate from round 1"
     },
     {
       "observation": "services.yaml doesn't mention Makefile targets as canonical way to run checks",
-      "reason": "services.yaml documents the raw commands that run inside the container; Makefile wraps them with docker compose exec. Both are valid entry points depending on context. No change needed."
+      "reason": "duplicate from round 1"
     },
     {
       "observation": "Pre-commit hook file hygiene convention not in AGENTS.md",
-      "reason": "Minor operational detail; workers don't need to know the specifics of the pre-commit hook implementation. The convention is already captured in AGENTS.md: 'Pre-commit hooks call Docker-backed commands'"
+      "reason": "duplicate from round 1"
     },
     {
       "observation": "Ruff lint rules not documented in AGENTS.md",
-      "reason": "Workers don't need to know the specific lint rules — ruff check will tell them if something fails. Documenting lint rules in AGENTS.md would add maintenance burden for little value."
+      "reason": "duplicate from round 1"
     },
     {
       "observation": "Capabilities store reactivity pattern nuances",
-      "reason": "Implementation detail specific to the current store; not a general convention. The pattern works correctly for M1."
+      "reason": "duplicate from round 1"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/m1-foundation/scrutiny/synthesis.json (round 1)"
 }
