@@ -1,0 +1,25 @@
+services:
+  funasr:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-glm-asr-glm-asr:latest}
+    image: funasr:latest
+    container_name: funasr
+    stdin_open: true
+    tty: true
+    volumes:
+      - ~/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ~/.cache/modelscope:/home/appuser/.cache/modelscope
+      - ./data:/app/data
+    environment:
+      - HF_HUB_OFFLINE=0
+      - MODELSCOPE_CACHE=/home/appuser/.cache/modelscope
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: /bin/bash
