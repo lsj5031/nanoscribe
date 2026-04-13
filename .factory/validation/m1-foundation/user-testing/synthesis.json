@@ -1,6 +1,6 @@
 {
   "milestone": "m1-foundation",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "assertionsSummary": {
     "total": 10,
@@ -22,21 +22,10 @@
   "failedAssertions": [
     {
       "id": "VAL-SYS-004",
-      "reason": "Health check reports db:ok when the DB file is missing. Root cause: sqlite3.connect() in check_db_health() creates a new empty file when the path doesn't exist, and PRAGMA integrity_check passes on the empty database. The health check should verify the DB file exists before connecting, or run a schema-aware check (e.g., verify a known table exists) rather than just integrity_check on whatever file is found."
+      "reason": "Health check reports db:ok when the DB file is missing. Root cause: sqlite3.connect() in check_db_health() creates a new empty file when the path doesn't exist, and PRAGMA integrity_check passes on the empty database. The fix-health-db-check feature (which fulfills VAL-SYS-004) is still in pending status and has not been implemented."
     }
   ],
   "blockedAssertions": [],
-  "appliedUpdates": [
-    {
-      "target": "user-testing.md",
-      "description": "Added Flow Validator Guidance sections for API Endpoints and Browser UI surfaces with isolation rules and boundaries",
-      "source": "setup"
-    },
-    {
-      "target": "services.yaml",
-      "description": "No changes needed — service definitions were correct",
-      "source": "setup"
-    }
-  ],
-  "previousRound": null
+  "appliedUpdates": [],
+  "previousRound": ".factory/validation/m1-foundation/user-testing/synthesis.json (round 1)"
 }
