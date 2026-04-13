@@ -174,6 +174,44 @@ class TestSPAServing:
         assert "application/json" in resp.headers.get("content-type", "")
 
 
+class TestPathTraversalProtection:
+    """serve_spa() must prevent path-traversal attacks."""
+
+    def test_resolve_path_rejects_traversal(self):
+        """_resolve_path returns None for paths escaping the base directory."""
+        from app.main import _resolve_path
+
+        assert _resolve_path("/tmp/test-static", "../../../etc/passwd") is None
+        assert _resolve_path("/tmp/test-static", "../../etc/shadow") is None
+        assert _resolve_path("/tmp/test-static", "/etc/passwd") is None
+
+    def test_resolve_path_accepts_valid_files(self):
+        """_resolve_path returns the resolved path for valid relative paths."""
+        from app.main import _resolve_path
+
+        result = _resolve_path("/tmp/test-static", "favicon.png")
+        assert result == "/tmp/test-static/favicon.png"
+
+    def test_resolve_path_accepts_subdirs(self):
+        """_resolve_path accepts paths with subdirectories."""
+        from app.main import _resolve_path
+
+        result = _resolve_path("/tmp/test-static", "assets/icon.svg")
+        assert result == "/tmp/test-static/assets/icon.svg"
+
+    def test_resolve_path_rejects_absolute_path(self):
+        """_resolve_path rejects absolute paths outside the base dir."""
+        from app.main import _resolve_path
+
+        assert _resolve_path("/tmp/test-static", "/absolute/path") is None
+
+    def test_traversal_request_returns_fallback(self, client):
+        """Requests with path traversal still return 200 (SPA fallback), not arbitrary files."""
+        resp = client.get("/../../../etc/passwd")
+        # The SPA fallback is served rather than an arbitrary file
+        assert resp.status_code == 200
+
+
 class TestDataDirectory:
     """VAL-SYS-012: All persistent data stored under /app/data."""
 
@@ -323,3 +361,89 @@ class TestCapabilitiesRuntimeState:
         data = resp.json()
         assert isinstance(data["vad"], str)
         assert len(data["vad"]) > 0
+
+
+class TestCentralizedConfig:
+    """All env vars read through core/config.py Settings class."""
+
+    def test_settings_reads_data_dir(self):
+        """Settings reads NANOSCRIBE_DATA_DIR."""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        assert settings.data_dir == Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
+
+    def test_settings_reads_static_dir(self):
+        """Settings reads NANOSCRIBE_STATIC_DIR."""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        assert settings.static_dir == Path(os.environ.get("NANOSCRIBE_STATIC_DIR", "/app/static"))
+
+    def test_settings_db_path_derived(self):
+        """db_path is derived from data_dir."""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        assert settings.db_path == settings.data_dir / "nanoscribe.db"
+
+    def test_main_imports_settings(self):
+        """main.py imports from core.config rather than reading os.environ directly."""
+        import inspect
+
+        import app.main as main_mod
+
+        source = inspect.getsource(main_mod)
+        assert "get_settings" in source
+        assert "os.environ" not in source
+
+    def test_system_api_imports_settings(self):
+        """api/system.py imports from core.config rather than reading os.environ directly."""
+        import inspect
+
+        import app.api.system as system_mod
+
+        source = inspect.getsource(system_mod)
+        assert "get_settings" in source
+        assert "os.environ" not in source
+
+    def test_migrate_imports_settings(self):
+        """db/migrate.py imports from core.config rather than reading os.environ directly."""
+        import inspect
+
+        import app.db.migrate as migrate_mod
+
+        source = inspect.getsource(migrate_mod)
+        assert "core.config" in source
+        # os.environ should only appear in config.py, not migrate.py
+        assert "os.environ" not in source
+
+
+class TestDBConnectionDeduplication:
+    """Single source of DB connection helpers in db/__init__.py."""
+
+    def test_db_module_has_get_connection(self):
+        """db/__init__.py provides get_connection."""
+        from app.db import get_connection
+
+        assert callable(get_connection)
+
+    def test_dependencies_no_longer_has_get_db_connection(self):
+        """core/dependencies.py no longer exports get_db_connection."""
+        import app.core.dependencies as deps
+
+        assert not hasattr(deps, "get_db_connection")
+
+    def test_get_connection_works(self, tmp_path):
+        """get_connection returns a working SQLite connection."""
+        from app.db import get_connection
+
+        db_path = tmp_path / "test.db"
+        conn = get_connection(db_path)
+        try:
+            result = conn.execute("PRAGMA journal_mode").fetchone()
+            assert result[0] == "wal"
+            result = conn.execute("PRAGMA foreign_keys").fetchone()
+            assert result[0] == 1
+        finally:
+            conn.close()

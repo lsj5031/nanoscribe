@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
 from app.api.system import router as system_router
+from app.core.config import get_settings
 
-DATA_DIR = Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
-STATIC_DIR = Path(os.environ.get("NANOSCRIBE_STATIC_DIR", "/app/static"))
+_settings = get_settings()
+DATA_DIR = _settings.data_dir
+STATIC_DIR = _settings.static_dir
+
+
+def _resolve_path(base: str, path: str) -> str | None:
+    """Resolve *path* relative to *base* and return it only if contained within *base*.
+
+    Prevents path-traversal attacks (e.g. ``/../../../etc/passwd``).
+    Returns the resolved absolute path string on success, or ``None`` if the
+    candidate escapes *base*.
+    """
+    # pathlib handles platform-specific separators; resolve() collapses ".."
+    from pathlib import Path
+
+    resolved = (Path(base) / path).resolve()
+    base_resolved = Path(base).resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        return None
+    return str(resolved)
 
 
 def create_app() -> FastAPI:
@@ -40,10 +58,14 @@ def create_app() -> FastAPI:
         @app.get("/{path:path}", response_model=None)
         async def serve_spa(request: Request, path: str = "") -> Response:
             """Serve the SPA. API routes are handled before this catch-all."""
-            # Check if a static file matches the path (e.g. favicon.png)
-            candidate = STATIC_DIR / path
-            if path and candidate.is_file():
-                return FileResponse(candidate)
+            # Check if a static file matches the path — but guard against traversal
+            if path:
+                resolved = _resolve_path(str(STATIC_DIR), path)
+                if resolved is not None:
+                    from pathlib import Path as _P
+
+                    if _P(resolved).is_file():
+                        return FileResponse(resolved)
 
             # Otherwise serve the SPA fallback for client-side routing
             return FileResponse(STATIC_DIR / "200.html")

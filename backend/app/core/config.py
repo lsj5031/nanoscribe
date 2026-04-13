@@ -1,4 +1,8 @@
-"""Application configuration loaded from environment variables."""
+"""Application configuration — single source of truth for env vars.
+
+All environment variable reads must go through the Settings class.
+Do not call os.environ.get() or os.getenv() for app config elsewhere.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ def _default_static_dir() -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    """Immutable application settings."""
+    """Immutable application settings loaded from environment variables."""
 
     data_dir: Path = field(default_factory=_default_data_dir)
     static_dir: Path = field(default_factory=_default_static_dir)

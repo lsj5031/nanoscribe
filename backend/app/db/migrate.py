@@ -7,15 +7,18 @@ Enables WAL mode and foreign key constraints on each connection.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 from typing import Optional, Union
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-_DEFAULT_DB_DIR = Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
-_DEFAULT_DB_PATH = _DEFAULT_DB_DIR / "nanoscribe.db"
+
+def _default_db_path() -> Path:
+    """Return the default database path from Settings."""
+    from app.core.config import get_settings
+
+    return get_settings().db_path
 
 
 def run_migrations(db_path: Optional[Union[str, Path]] = None) -> None:
@@ -30,7 +33,7 @@ def run_migrations(db_path: Optional[Union[str, Path]] = None) -> None:
                  $NANOSCRIBE_DATA_DIR/nanoscribe.db.
     """
     if db_path is None:
-        db_path = _DEFAULT_DB_PATH
+        db_path = _default_db_path()
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 

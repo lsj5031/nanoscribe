@@ -1,16 +1,14 @@
-"""Allow running migrations via: python -m app.db.migrate"""
+"""Allow running migrations via: python -m app.db"""
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
+from app.core.config import get_settings
 from app.db.migrate import run_migrations
 
 
 def main() -> None:
-    data_dir = Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
-    db_path = data_dir / "nanoscribe.db"
+    settings = get_settings()
+    db_path = settings.db_path
     print(f"Running migrations on {db_path} ...")
     run_migrations(db_path)
     print("Migrations complete.")

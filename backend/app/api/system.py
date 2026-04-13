@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from fastapi import APIRouter
 
+from app.core.config import get_settings
 from app.db import check_db_health
 from app.schemas.system import CapabilitiesResponse, HealthResponse
 from app.services.capabilities import get_capabilities
 
 router = APIRouter(tags=["system"])
 
-DATA_DIR = Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
+_settings = get_settings()
+DATA_DIR = _settings.data_dir
 
 
 def _check_storage() -> str:
