@@ -1,0 +1,24 @@
+commands:
+  install: cd /app/frontend && pnpm install && cd /app/backend && pip install -e ".[dev]"
+  typecheck: cd /app/backend && ty check .
+  build: cd /app/frontend && pnpm build
+  test: cd /app/backend && python -m pytest tests/ -x
+  lint: cd /app/backend && ruff check . && cd /app/frontend && pnpm check
+  backend-check: cd /app/backend && ruff format --check . && ruff check . && ty check .
+  frontend-check: cd /app/frontend && pnpm check && pnpm format:check
+  check: cd /app/backend && ruff format --check . && ruff check . && ty check . && cd /app/frontend && pnpm check && pnpm format:check
+
+services:
+  app:
+    start: cd /app/backend && PORT=8000 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    stop: "lsof -ti :8000 | xargs kill || true"
+    healthcheck: curl -sf http://localhost:8000/api/system/health
+    port: 8000
+    depends_on: []
+
+  frontend-dev:
+    start: cd /app/frontend && pnpm dev --host 0.0.0.0 --port 5173
+    stop: "lsof -ti :5173 | xargs kill || true"
+    healthcheck: curl -sf http://localhost:5173
+    port: 5173
+    depends_on: []
