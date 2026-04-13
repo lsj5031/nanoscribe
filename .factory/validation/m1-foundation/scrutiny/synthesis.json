@@ -1,0 +1,119 @@
+{
+  "milestone": "m1-foundation",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x -v'", "exitCode": 0, "detail": "65 passed in 3.37s" },
+    "typecheck": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ty check .'", "exitCode": 0, "detail": "All checks passed" },
+    "lint": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ruff format --check . && ruff check .'", "exitCode": 0, "detail": "18 files formatted, all checks passed" },
+    "frontend-check": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/frontend && pnpm check'", "exitCode": 0, "detail": "0 errors, 0 warnings" },
+    "frontend-format": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/frontend && pnpm format:check'", "exitCode": 0, "detail": "All matched files use Prettier code style" }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "failedFeatures": ["m1-sqlite-schema"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "m1-sqlite-schema",
+      "severity": "blocking",
+      "description": "FTS5 segment triggers use the memo's rowid as the FTS rowid. In a contentless FTS5 table (content=''), each rowid maps to exactly one entry. When a second segment is inserted for the same memo, the trigger deletes the existing FTS entry and replaces it with only the new segment's text. This means only the LAST segment per memo is searchable — all previous segments' text is lost from the FTS index. Example: if memo has segments 'Hello world' and 'Goodbye world', only 'Goodbye world' will be findable via FTS MATCH.",
+      "file": "backend/app/db/migrations/001_initial_schema.sql",
+      "line": 116,
+      "suggestedFix": "Use unique rowids per segment (the segment's own rowid) in the FTS triggers instead of the memo's rowid. Query results can be aggregated by memo_id at search time. Update test_fts5_basic_search and test_fts5_content_sync_with_memos to test trigger-driven sync with multiple segments per memo."
+    }
+  ],
+  "nonBlockingIssues": [
+    {
+      "featureId": "m1-dockerfile-dev-env",
+      "description": "|| true error suppression in Dockerfile pip/pnpm install commands could mask real dependency issues",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-dockerfile-dev-env",
+      "description": "NANOSCRIBE_STATIC_DIR=/app/static set in docker-compose but directory doesn't exist in dev stage",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-fastapi-skeleton",
+      "description": "Duplicated DB connection helpers in core/dependencies.py vs db/__init__.py",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-fastapi-skeleton",
+      "description": "health_check() triggers GPU detection on every call via get_capabilities()",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-fastapi-skeleton",
+      "description": "DATA_DIR env var reading not centralized through Settings config",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-sveltekit-skeleton",
+      "description": "Path traversal risk in serve_spa() catch-all — candidate.resolve() should verify containment within STATIC_DIR",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-sveltekit-skeleton",
+      "description": "Placeholder favicon.png contains text, not actual image",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-makefile-quality-gates",
+      "description": "Pre-commit hook omits ty check and svelte-check for speed (incomplete check vs make check)",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "m1-makefile-quality-gates",
+      "description": "File hygiene sed doesn't filter by file extension, operates on all staged files",
+      "severity": "non_blocking"
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add documentation for the SPA serving pattern: FastAPI serves SvelteKit adapter-static output (200.html fallback, _app/ immutable assets) via catch-all route. Workers modifying main.py should understand the mount ordering and SvelteKit output conventions.",
+      "evidence": "m1-sveltekit-skeleton review flagged that backend/app/main.py:30-53 implements SPA serving with SvelteKit adapter-static conventions not documented in AGENTS.md.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the Svelte 5 state management convention: use runes ($state, $derived, $effect) with getter functions for stores rather than traditional writable/readable stores. Multiple features will add stores and should follow the same pattern.",
+      "evidence": "m1-sveltekit-skeleton review noted capabilities.svelte.ts uses $state with getter functions, a valid but specific Svelte 5 pattern that should be consistent across the codebase.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Centralize configuration: all env vars (NANOSCRIBE_DATA_DIR, NANOSCRIBE_STATIC_DIR) should be read through core/config.py Settings class, not duplicated at module level across multiple files.",
+      "evidence": "Reviews of m1-fastapi-skeleton and m1-sveltekit-skeleton flagged duplicated env var reading in main.py, api/system.py, and core/config.py.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker created library doc .factory/library/sqlite-schema.md but it wasn't committed",
+      "reason": "The file already exists in .factory/library/ — this is already documented"
+    },
+    {
+      "observation": "services.yaml doesn't mention Makefile targets as canonical way to run checks",
+      "reason": "services.yaml documents the raw commands that run inside the container; Makefile wraps them with docker compose exec. Both are valid entry points depending on context. No change needed."
+    },
+    {
+      "observation": "Pre-commit hook file hygiene convention not in AGENTS.md",
+      "reason": "Minor operational detail; workers don't need to know the specifics of the pre-commit hook implementation. The convention is already captured in AGENTS.md: 'Pre-commit hooks call Docker-backed commands'"
+    },
+    {
+      "observation": "Ruff lint rules not documented in AGENTS.md",
+      "reason": "Workers don't need to know the specific lint rules — ruff check will tell them if something fails. Documenting lint rules in AGENTS.md would add maintenance burden for little value."
+    },
+    {
+      "observation": "Capabilities store reactivity pattern nuances",
+      "reason": "Implementation detail specific to the current store; not a general convention. The pattern works correctly for M1."
+    }
+  ],
+  "previousRound": null
+}

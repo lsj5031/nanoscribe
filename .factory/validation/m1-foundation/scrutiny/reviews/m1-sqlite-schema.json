@@ -1,0 +1,56 @@
+{
+  "featureId": "m1-sqlite-schema",
+  "reviewedAt": "2026-04-14T00:00:00.000Z",
+  "commitId": "eb754a3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The schema implementation correctly creates all 4 required tables (memos, jobs, segments, memo_speakers) with all specified columns, proper types, foreign keys with ON DELETE CASCADE, indexes, default values, and auto-populated timestamps. The migration runner is well-structured with idempotency via a _migrations tracking table, WAL mode, and foreign key enforcement. However, the FTS5 trigger design has a significant correctness bug: using the memo's rowid as the FTS rowid means only the LAST segment's text is indexed per memo, losing all other segments from search. The FTS5 content sync test is also superficial — it only checks that 'memos_fts' appears in the SQL string rather than verifying actual trigger-driven sync.",
+    "issues": [
+      {
+        "file": "backend/app/db/migrations/001_initial_schema.sql",
+        "line": 116,
+        "severity": "blocking",
+        "description": "FTS5 segment triggers (trg_segments_fts_insert, trg_segments_fts_update, trg_segments_fts_delete) all use the memo's rowid as the FTS rowid. In a contentless FTS5 table (content=''), each rowid maps to exactly one entry. When a second segment is inserted for the same memo, the trigger deletes the existing FTS entry (which contained the first segment's text) and inserts a new one with only the new segment's text. This means only the LAST segment's text is searchable — all previous segments' text is lost from the FTS index. Example: if memo has segments 'Hello world' and 'Goodbye world', only 'Goodbye world' will be findable via FTS MATCH. A correct design would use unique rowids per segment (e.g., the segment's own rowid) and aggregate results at query time, or use a content-sync approach that accumulates all segment text."
+      },
+      {
+        "file": "backend/app/db/migrations/001_initial_schema.sql",
+        "line": 103,
+        "severity": "non_blocking",
+        "description": "The memo insert trigger (trg_memos_fts_insert) creates an FTS entry with empty text (''). When the first segment is later inserted, the segment trigger will delete this empty-text entry and replace it. This works but is slightly wasteful — the initial empty-text FTS entry serves no purpose until segments are added. This is minor."
+      },
+      {
+        "file": "backend/tests/test_db.py",
+        "line": 401,
+        "severity": "non_blocking",
+        "description": "test_fts5_content_sync_with_memos only checks that 'memos_fts' appears in the SQL DDL string — it doesn't actually verify that triggers sync data. A better test would insert a memo + segment, then verify the data appears in memos_fts via MATCH query, then update/delete and verify sync. The test_fts5_basic_search test partially covers this but inserts directly into memos_fts rather than testing trigger-driven sync."
+      },
+      {
+        "file": "backend/tests/test_db.py",
+        "line": 389,
+        "severity": "non_blocking",
+        "description": "test_fts5_basic_search manually inserts into memos_fts rather than testing that the triggers automatically sync data when inserting into memos/segments. This doesn't validate the trigger-driven sync that is the core of the FTS5 design. A proper end-to-end test would: insert a memo, insert a segment, then search via MATCH and verify both the title and segment text are findable."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The project uses environment variable NANOSCRIBE_DATA_DIR for the database path default, but this env var isn't documented in AGENTS.md or architecture.md. The Dockerfile and docker-compose.yml set it, but a future worker might not know about it.",
+      "evidence": "backend/app/db/migrate.py:16-17 uses NANOSCRIBE_DATA_DIR env var; AGENTS.md only mentions 'All persistent data under /app/data' without naming the env var"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker created a library doc at .factory/library/sqlite-schema.md documenting the schema. This is useful for future workers but the doc was not committed (it's untracked). It may or may not still exist depending on subsequent sessions.",
+      "evidence": "Transcript shows worker created .factory/library/sqlite-schema.md but git status after commit shows it as untracked"
+    },
+    {
+      "area": "skills",
+      "observation": "The backend-worker skill procedure was followed correctly (TDD, Docker execution, quality checks). Worker deviated only by skipping step 6 (manual verification via curl) since this feature is a database migration with no API endpoint — this was a justified deviation.",
+      "evidence": "Transcript shows worker wrote tests first, implemented, ran quality checks, all passed. SkillFeedback.followedProcedure = true."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Schema tables, migration runner, and test coverage are solid. However, the FTS5 trigger design has a blocking bug: using the memo's rowid as the FTS rowid causes only the last segment's text to be indexed per memo, making all other segments unsearchable. The tests don't catch this because they insert directly into the FTS table rather than testing trigger-driven sync with multiple segments per memo. This must be fixed before the search feature can work correctly."
+}

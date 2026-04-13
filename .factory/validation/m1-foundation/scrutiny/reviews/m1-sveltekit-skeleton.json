@@ -1,0 +1,61 @@
+{
+  "featureId": "m1-sveltekit-skeleton",
+  "reviewedAt": "2026-04-14T00:00:00Z",
+  "commitId": "1b8bfb22f698057844a8e735988556fb8afccb87",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The SvelteKit SPA skeleton is well-implemented and covers all required features: package.json with pnpm, adapter-static with ssr=false and fallback 200.html, vite.config.ts with tailwindcss v4 plugin, dark theme with teal #00d4ff accent, top bar with logo/search/settings, three routes (/, /memos/[memoId], /settings), capabilities store that fetches /api/system/capabilities, and empty state placeholders. The implementation uses Svelte 5 runes correctly. There are two non-blocking issues: a path traversal risk in the SPA catch-all handler and a minor reactivity concern in the capabilities store.",
+    "issues": [
+      {
+        "file": "backend/app/main.py",
+        "line": 49,
+        "severity": "non_blocking",
+        "description": "Path traversal risk in serve_spa(): `STATIC_DIR / path` could potentially be exploited with paths like `../../etc/passwd`. While FastAPI's route parsing and Starlette's StaticFiles do some normalization, the manual file check `candidate = STATIC_DIR / path` followed by `candidate.is_file()` should use `candidate.resolve()` and verify it's within STATIC_DIR. This is low risk since it only serves files that must exist on disk, and the route is registered after /api routes, but defense-in-depth would be better."
+      },
+      {
+        "file": "frontend/src/lib/stores/capabilities.svelte.ts",
+        "line": 58,
+        "severity": "non_blocking",
+        "description": "The module-level `fetchCapabilities()` auto-fetch call fires immediately on import. In the layout, `$effect(() => { getCapabilities(); })` only reads the current value but doesn't actually trigger a re-fetch. This means the initial auto-fetch on module import is the only time capabilities are loaded. If the store module is tree-shaken or loaded lazily, the timing could be unexpected. The layout's $effect doesn't call `fetchCapabilities()`, just reads the current value, so it won't re-fetch on navigation. This is fine for M1 but worth noting for future milestones where re-fetch might be needed."
+      },
+      {
+        "file": "backend/app/main.py",
+        "line": 37,
+        "severity": "non_blocking",
+        "description": "The static assets mount `app.mount('/static-assets', StaticFiles(directory=STATIC_DIR), name='static-root')` is registered before the catch-all `/{path:path}` route. Since Starlette processes mounts before routes when they match, requests to `/_app/...` will hit the `spa-assets` mount, but requests to `favicon.png` or other static files will match `static-assets` mount AND the `serve_spa` catch-all. The serve_spa handler also checks for static files. This dual-serving is redundant but not harmful. The mount ordering works because Starlette matches mounts first."
+      },
+      {
+        "file": "frontend/static/favicon.png",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "favicon.png contains the text 'placeholder' instead of an actual image file. This will cause a broken favicon in browsers. Fine for a skeleton but should be replaced before user-facing release."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker used Svelte 5 runes ($state, $derived, $effect, $props) with getter functions for the capabilities store rather than Svelte stores (writable/readable). This is a valid Svelte 5 pattern using module-level $state, but it differs from the more common store pattern. AGENTS.md mentions 'SvelteKit 5 with runes' but doesn't specify the preferred state management pattern (runes-based module state vs traditional stores).",
+      "evidence": "frontend/src/lib/stores/capabilities.svelte.ts uses $state with exported getter functions instead of Svelte's writable() stores"
+    },
+    {
+      "area": "conventions",
+      "observation": "The backend SPA serving pattern (catch-all route for SPA, mounting _app/ immutable assets, 200.html fallback) is a significant pattern not documented in AGENTS.md or architecture.md. The architecture doc says 'FastAPI serves the built SvelteKit SPA as static files AND the API endpoints' but doesn't describe the SvelteKit-specific output structure (_app/, 200.html).",
+      "evidence": "backend/app/main.py:30-53 implements SPA serving with adapter-static output conventions (200.html, _app/ directory)"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The capabilities store's reactivity pattern (module-level $state with getter functions) is a Svelte 5 pattern that works but has nuances: components must call the getter in reactive contexts ($effect or template expressions) to track changes. This isn't documented in the library.",
+      "evidence": "frontend/src/routes/+page.svelte calls getCapabilities() in template expressions which correctly tracks $state reactivity"
+    },
+    {
+      "area": "services",
+      "observation": "services.yaml already has the frontend-check and build commands that cover this feature's verification (pnpm check, pnpm format:check, pnpm build). No gaps here.",
+      "evidence": "services.yaml lists 'frontend-check' and 'build' commands matching the feature's needs"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The m1-sveltekit-skeleton feature is well-implemented and meets all requirements from the feature description. The SvelteKit SPA skeleton includes all specified components: adapter-static config with ssr=false and 200.html fallback, Tailwind CSS v4 with dark theme and teal #00d4ff accent, app shell with TopBar (logo, search, settings), three routes with appropriate placeholder content, and a capabilities store that fetches /api/system/capabilities. The dark theme is implemented as the only theme (no light mode toggle), satisfying VAL-PWA-014. The accent color #00d4ff is consistently used throughout, satisfying VAL-PWA-015. The only concerns are non-blocking: a minor path traversal risk in the SPA catch-all handler, and a placeholder favicon. No handoff or transcript was available for this feature's worker session (not recorded in handoffs/ or worker-transcripts.jsonl), so transcript review was not possible."
+}

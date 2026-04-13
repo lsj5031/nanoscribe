@@ -1,0 +1,50 @@
+{
+  "featureId": "m1-makefile-quality-gates",
+  "reviewedAt": "2026-04-14T00:00:00.000Z",
+  "commitId": "e94f749",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The Makefile was updated with comprehensive quality gate targets that delegate to individual check commands with clear stage labels. A new scripts/pre-commit-hook.sh provides Docker-backed pre-commit checks with file hygiene (trailing whitespace removal, EOF newline fix). All required make targets (dev, shell, check, backend-check, frontend-check, hooks-install) are present and functional. Ruff, ty, and Prettier configurations were already in place from prior features. The implementation is clean and well-structured.",
+    "issues": [
+      {
+        "file": "scripts/pre-commit-hook.sh",
+        "line": 29,
+        "severity": "non_blocking",
+        "description": "Pre-commit hook runs ruff format --check and ruff check but does NOT run ty check, unlike make backend-check which runs all three. This is likely intentional (faster pre-commit hook), but creates a gap where code can pass the pre-commit hook but fail make backend-check due to type errors. Consider whether this is acceptable or whether ty check should be added to the pre-commit hook."
+      },
+      {
+        "file": "scripts/pre-commit-hook.sh",
+        "line": 33,
+        "severity": "non_blocking",
+        "description": "Pre-commit hook runs pnpm format:check but does NOT run pnpm check (svelte-check), unlike make frontend-check which runs both. Same consideration as above — faster hook vs. completeness gap."
+      },
+      {
+        "file": "scripts/pre-commit-hook.sh",
+        "line": 12,
+        "severity": "non_blocking",
+        "description": "The sed -i trailing whitespace removal operates on all staged files without filtering by file type/extension. While unlikely to corrupt binary files in practice, it would be more robust to filter by extension (e.g., only .py, .ts, .svelte, .js, .json, .md, .yaml, .sh files)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The services.yaml documents backend-check, frontend-check, and check commands, but these are described as raw shell commands (cd /app/backend && ...). The Makefile wraps these in docker compose exec calls. The services.yaml doesn't mention the Makefile targets as the canonical way to run these checks. Workers reading services.yaml might use the raw commands instead of make targets.",
+      "evidence": "services.yaml has 'backend-check: cd /app/backend && ruff format --check . && ruff check . && ty check .' but the Makefile's make backend-check runs each as separate docker compose exec calls with echo labels."
+    },
+    {
+      "area": "conventions",
+      "observation": "The pre-commit hook file hygiene (trailing whitespace removal, EOF newline fix) is a new convention that isn't documented in AGENTS.md. Workers contributing to the project should know about this, especially if they modify the pre-commit hook.",
+      "evidence": "scripts/pre-commit-hook.sh implements file hygiene in lines 9-22, but AGENTS.md Coding Conventions section only mentions 'Pre-commit hooks call Docker-backed commands, not host binaries' without detailing the file hygiene behavior."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The pyproject.toml Ruff config uses select = ['E', 'F', 'I', 'W'] which covers pycodestyle errors, pyflakes, isort, and pycodestyle warnings. This is a reasonable but minimal set. AGENTS.md doesn't document what lint rules are enabled, which could be useful for workers adding code.",
+      "evidence": "backend/pyproject.toml [tool.ruff.lint] select = ['E', 'F', 'I', 'W']"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The Makefile quality gates feature is well-implemented. All required make targets (dev, shell, check, backend-check, frontend-check, hooks-install) are present and working. The pre-commit hook script provides Docker-backed quality checks with file hygiene. Minor non-blocking observations: the pre-commit hook runs a subset of checks compared to make check (omits ty check and svelte-check for speed), and the file hygiene doesn't filter by file extension. The Ruff/ty/Prettier configurations were already in place from prior features. Three shared state observations noted regarding services.yaml alignment, pre-commit hook convention documentation, and lint rule documentation."
+}
