@@ -69,20 +69,71 @@ Validators will need test audio files:
 - SPA serving: `backend/app/main.py`
 - Frontend built at `/app/frontend/build/`, symlinked to `/app/static/` in dev mode
 
-## Flow Validator Guidance: Browser UI
+## Flow Validator Guidance: Browser UI (M2)
 
 ### Isolation Rules
-- M1 browser assertions are **read-only visual checks** (no mutations).
-- Only need one browser instance.
-- No test data seeding needed.
-- Session ID for agent-browser: `5b8b5af1dd95`
+- M2 browser assertions involve **upload mutations** (creating memos/jobs).
+- Multiple browser validators should NOT run concurrently since they share the database.
+- Use a unique browser session ID per validator run.
+- After testing, the database will have test memos — this is expected.
 
 ### Boundaries
 - App URL: http://localhost:8000
 - Chromium binary: `/usr/sbin/chromium`
-- Do NOT interact with upload, recording, or editing features (not tested in M1).
-- Only verify visual appearance (dark mode, accent color).
+- Test fixtures are in Docker at `/app/data/test-fixtures/`
+- The app is running inside Docker on port 8000.
 
-### Visual Checks
-- Dark mode: verify dark background on body/root element, light text, dark cards
-- Teal accent: verify #00d4ff appears in CSS custom properties, Tailwind tokens, or computed styles
+### M2 Upload UI Testing
+- Test drag-and-drop from the empty state home page
+- Test the file picker upload button
+- Verify the processing overlay appears after upload
+- Verify the cancel button is visible during processing
+- Verify the progress ring renders
+- For drag-and-drop testing with agent-browser, use `page.setInputFiles` or CDP drag events
+
+### Key Files
+- Upload store: `frontend/src/lib/stores/upload.svelte.ts`
+- Processing overlay: `frontend/src/lib/components/ProcessingOverlay.svelte`
+- Drop overlay: `frontend/src/lib/components/DropOverlay.svelte`
+- Upload page: `frontend/src/routes/+page.svelte`
+
+## Flow Validator Guidance: API Endpoints (M2)
+
+### Isolation Rules for M2
+- M2 API assertions **mutate** database state (create memos, jobs).
+- API validators that create memos should be run **serially** to avoid interference on shared DB state.
+- Each validator should use unique test files/filenames to avoid collision.
+- Cleanup: test memos will persist in the DB after testing — this is acceptable.
+
+### Key Endpoints for M2
+- `POST /api/memos` — multipart upload with `files[]` field
+- `GET /api/memos` — list memos (verify created memos)
+- `GET /api/memos/{id}` — get memo detail
+- `GET /api/jobs/{id}` — get job status
+
+### Test Fixtures (inside Docker at /app/data/test-fixtures/)
+- `test_5s.wav` — 5-second valid WAV (160078 bytes)
+- `test_5s.mp3` — 5-second MP3
+- `test_5s.m4a` — 5-second M4A
+- `test_5s.aac` — 5-second AAC
+- `test_5s.webm` — 5-second WebM
+- `test_5s.ogg` — 5-second OGG
+- `test_5s.opus` — 5-second OPUS
+- `test_30s.wav` — 30-second valid WAV
+- `corrupt_text.wav` — text file renamed to .wav
+- `corrupt_random.wav` — random bytes in .wav
+- `empty.mp3` — zero-byte file
+- `unsupported.txt` — plain text file
+- `unsupported.pdf` — PDF file
+- `会议 2026-04-13 (final).mp3` — Unicode/special char filename
+- `R&D intro.wav` — Ampersand in filename
+- `café recording.ogg` — Accented character in filename
+
+### Upload Response Shape
+```json
+{
+  "memos": [{"id": "...", "title": "...", "source_kind": "upload", "source_filename": "...", "status": "queued", ...}],
+  "jobs": [{"id": "...", "memo_id": "...", "job_type": "transcribe", "status": "queued", "progress": 0.0, "attempt_count": 1, ...}],
+  "errors": []
+}
+```

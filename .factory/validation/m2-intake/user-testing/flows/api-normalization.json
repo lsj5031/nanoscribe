@@ -1,0 +1,206 @@
+{
+  "groupId": "api-normalization",
+  "testedAt": "2026-04-14T00:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:8000",
+    "testingMethod": "curl for API + docker compose exec for container inspection"
+  },
+  "toolsUsed": ["curl", "docker"],
+  "assertions": {
+    "VAL-INTAKE-009": {
+      "id": "VAL-INTAKE-009",
+      "title": "Original files stored under memo directory",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Copy test_5s.mp3 from container to host /tmp/test_normalization_009.mp3",
+          "expected": "File copied successfully",
+          "observed": "File copied, 81837 bytes"
+        },
+        {
+          "action": "Compute md5sum of host file: md5sum /tmp/test_normalization_009.mp3",
+          "expected": "md5sum calculated",
+          "observed": "cd95cf4203626793a0e867c886fc95b4"
+        },
+        {
+          "action": "Upload via POST /api/memos with files[]=@/tmp/test_normalization_009.mp3",
+          "expected": "201 with memo and job created",
+          "observed": "201 response, memo_id=4e27316c-a507-4d5c-9775-b682e478ae83, source_filename=test_normalization_009.mp3"
+        },
+        {
+          "action": "Check container: ls /app/data/memos/<memo_id>/source.original",
+          "expected": "source.original exists",
+          "observed": "source.original exists, 81837 bytes, permissions -rw-r--r--"
+        },
+        {
+          "action": "Compute md5sum of container source.original",
+          "expected": "Matches host upload md5sum",
+          "observed": "cd95cf4203626793a0e867c886fc95b4 — identical to uploaded file"
+        },
+        {
+          "action": "Check memo source_filename field",
+          "expected": "Matches original filename",
+          "observed": "source_filename = 'test_normalization_009.mp3' — matches"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "api-normalization/VAL-INTAKE-009-source-verification.txt"
+        ],
+        "hostMd5": "cd95cf4203626793a0e867c886fc95b4",
+        "containerMd5": "cd95cf4203626793a0e867c886fc95b4",
+        "memoId": "4e27316c-a507-4d5c-9775-b682e478ae83",
+        "sourceFilename": "test_normalization_009.mp3"
+      },
+      "issues": null
+    },
+    "VAL-INTAKE-010": {
+      "id": "VAL-INTAKE-010",
+      "title": "ffmpeg normalizes audio to canonical WAV",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Upload 7 format files (mp3, wav, m4a, aac, webm, ogg, opus) via POST /api/memos",
+          "expected": "All uploads succeed with memos created",
+          "observed": "All 7 uploads succeeded, 7 memos created with status=queued"
+        },
+        {
+          "action": "Run normalization manually on each memo via docker exec python",
+          "expected": "All formats normalize successfully",
+          "observed": "All 7 formats normalized without error"
+        },
+        {
+          "action": "Run ffprobe on each normalized.wav",
+          "expected": "PCM WAV, 16-bit, mono, 16kHz for all",
+          "observed": "All 7: codec_name=pcm_s16le, sample_rate=16000, channels=1, bits_per_sample=16"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "api-normalization/VAL-INTAKE-010-ffprobe-results.txt"
+        ],
+        "formatResults": {
+          "mp3": {"memo_id": "4e27316c-a507-4d5c-9775-b682e478ae83", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.0},
+          "wav": {"memo_id": "f1537dac-16fa-4a3f-a440-1dffbf47385c", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.0},
+          "m4a": {"memo_id": "05bd09f0-b9ed-423b-a346-fea7d21896ef", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.056},
+          "aac": {"memo_id": "acad4e7f-4b52-4f46-8456-58a1973cb424", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.12},
+          "webm": {"memo_id": "5cbb792d-82a7-42c0-a096-dcd0bcc1aa4b", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.0},
+          "ogg": {"memo_id": "30effc6f-aae4-4156-b9f1-67e15cbb8820", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.016},
+          "opus": {"memo_id": "3e14f5d6-4f22-4e18-a3d6-7707f4de4bd1", "codec": "pcm_s16le", "sample_rate": 16000, "channels": 1, "bits_per_sample": 16, "duration": 5.0}
+        }
+      },
+      "issues": null
+    },
+    "VAL-INTAKE-011": {
+      "id": "VAL-INTAKE-011",
+      "title": "Duration extracted from normalized audio",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Extract duration from all 7 format normalized WAVs using service",
+          "expected": "Duration matches ffprobe within ±100ms",
+          "observed": "All durations match ffprobe exactly (0ms diff) for all 7 formats"
+        },
+        {
+          "action": "Upload 30-second WAV and extract duration",
+          "expected": "Duration ~30000ms within ±100ms",
+          "observed": "Service: 30000ms, ffprobe: 30.000000s = 30000ms — exact match"
+        },
+        {
+          "action": "Verify duration is positive integer",
+          "expected": "All durations are positive integers",
+          "observed": "All durations are positive integers (5000, 5056, 5120, 5000, 5016, 5000, 30000)"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "api-normalization/VAL-INTAKE-011-duration-results.txt"
+        ],
+        "durationResults": {
+          "mp3_5s": {"service_ms": 5000, "ffprobe_ms": 5000, "diff_ms": 0},
+          "wav_5s": {"service_ms": 5000, "ffprobe_ms": 5000, "diff_ms": 0},
+          "m4a_5s": {"service_ms": 5056, "ffprobe_ms": 5056, "diff_ms": 0},
+          "aac_5s": {"service_ms": 5120, "ffprobe_ms": 5120, "diff_ms": 0},
+          "webm_5s": {"service_ms": 5000, "ffprobe_ms": 5000, "diff_ms": 0},
+          "ogg_5s": {"service_ms": 5016, "ffprobe_ms": 5016, "diff_ms": 0},
+          "opus_5s": {"service_ms": 5000, "ffprobe_ms": 5000, "diff_ms": 0},
+          "wav_30s": {"service_ms": 30000, "ffprobe_ms": 30000, "diff_ms": 0}
+        }
+      },
+      "issues": null
+    },
+    "VAL-INTAKE-012": {
+      "id": "VAL-INTAKE-012",
+      "title": "Waveform peaks extracted and stored as JSON",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check waveform.json exists after normalization for 5s MP3",
+          "expected": "waveform.json exists in memo directory",
+          "observed": "waveform.json exists at /app/data/memos/<id>/waveform.json (4000 bytes)"
+        },
+        {
+          "action": "Validate JSON structure and contents",
+          "expected": "Valid JSON array of numeric values in [0,1]",
+          "observed": "Valid JSON array, all float values, all in [0,1] range"
+        },
+        {
+          "action": "Check array length for 5s file",
+          "expected": "~500 peaks (100/s * 5s)",
+          "observed": "500 peaks exactly (100.0 peaks/second)"
+        },
+        {
+          "action": "Check array length for 30s file",
+          "expected": "~3000 peaks (100/s * 30s)",
+          "observed": "3000 peaks exactly (100.0 peaks/second)"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "api-normalization/VAL-INTAKE-012-waveform-results.txt"
+        ],
+        "waveformResults": {
+          "mp3_5s": {"exists": true, "valid_json": true, "all_numeric": true, "all_in_range": true, "peak_count": 500, "peaks_per_second": 100.0},
+          "wav_30s": {"exists": true, "valid_json": true, "all_numeric": true, "all_in_range": true, "peak_count": 3000, "peaks_per_second": 100.0}
+        }
+      },
+      "issues": null
+    },
+    "VAL-INTAKE-014": {
+      "id": "VAL-INTAKE-014",
+      "title": "UI acknowledges upload in under 200ms",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Measure POST /api/memos response time with ~80KB MP3 (5 runs)",
+          "expected": "Under 200ms",
+          "observed": "min=6.2ms, avg=6.8ms, max=8.1ms"
+        },
+        {
+          "action": "Measure POST /api/memos response time with ~160KB WAV (5 runs)",
+          "expected": "Under 200ms",
+          "observed": "min=13.0ms, avg=17.6ms, max=26.7ms"
+        },
+        {
+          "action": "Measure POST /api/memos response time with ~960KB WAV (5 runs)",
+          "expected": "Under 200ms",
+          "observed": "min=16.2ms, avg=17.1ms, max=18.6ms"
+        }
+      ],
+      "evidence": {
+        "files": [
+          "api-normalization/VAL-INTAKE-014-timing-results.txt"
+        ],
+        "timingResults": {
+          "80KB_MP3": {"runs_ms": [6.6, 6.5, 8.1, 6.6, 6.2], "min_ms": 6.2, "avg_ms": 6.8, "max_ms": 8.1},
+          "160KB_WAV": {"runs_ms": [26.7, 19.4, 14.2, 13.0, 14.7], "min_ms": 13.0, "avg_ms": 17.6, "max_ms": 26.7},
+          "960KB_WAV": {"runs_ms": [16.7, 17.1, 18.6, 16.2, 17.1], "min_ms": 16.2, "avg_ms": 17.1, "max_ms": 18.6}
+        }
+      },
+      "issues": null
+    }
+  },
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: all 5 passed. All supported audio formats (mp3, wav, m4a, aac, webm, ogg, opus) normalize correctly to 16-bit PCM WAV at 16kHz mono. Source files stored byte-for-byte identical with correct source_filename. Duration extraction matches ffprobe exactly. Waveform peaks stored as valid JSON with ~100 peaks/second. Upload response times are 6-27ms (well under 200ms threshold)."
+}

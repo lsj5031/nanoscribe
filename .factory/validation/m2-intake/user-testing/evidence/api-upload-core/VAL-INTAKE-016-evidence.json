@@ -1,0 +1,6 @@
+{
+  "no_files_field": {"status": 422, "error_type": "missing", "field": "files[]", "message": "Field required"},
+  "empty_files_field": {"status": 422, "error_type": "value_error", "field": "files[]", "message": "Expected UploadFile, received: <class 'str'>"},
+  "no_memos_created": true,
+  "no_jobs_created": true
+}

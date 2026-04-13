@@ -1,0 +1,23 @@
+{
+  "会议 2026-04-13 (final).mp3": {
+    "expected_title": "会议 2026-04-13 (final)",
+    "observed_title": "会议 2026-04-13 (final)",
+    "source_filename": "会议 2026-04-13 (final).mp3",
+    "source_original_exists": true,
+    "pass": true
+  },
+  "R&D intro.wav": {
+    "expected_title": "R&D intro",
+    "observed_title": "R&D intro",
+    "source_filename": "R&D intro.wav",
+    "source_original_exists": true,
+    "pass": true
+  },
+  "café recording.ogg": {
+    "expected_title": "café recording",
+    "observed_title": "café recording",
+    "source_filename": "café recording.ogg",
+    "source_original_exists": true,
+    "pass": true
+  }
+}

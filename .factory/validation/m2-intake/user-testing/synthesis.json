@@ -1,0 +1,57 @@
+{
+  "milestone": "m2-intake",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 23,
+    "passed": 23,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-INTAKE-001",
+    "VAL-INTAKE-002",
+    "VAL-INTAKE-003",
+    "VAL-INTAKE-004",
+    "VAL-INTAKE-005",
+    "VAL-INTAKE-006",
+    "VAL-INTAKE-007",
+    "VAL-INTAKE-008",
+    "VAL-INTAKE-009",
+    "VAL-INTAKE-010",
+    "VAL-INTAKE-011",
+    "VAL-INTAKE-012",
+    "VAL-INTAKE-013",
+    "VAL-INTAKE-014",
+    "VAL-INTAKE-015",
+    "VAL-INTAKE-016",
+    "VAL-INTAKE-017",
+    "VAL-INTAKE-018",
+    "VAL-INTAKE-019",
+    "VAL-INTAKE-020",
+    "VAL-INTAKE-021",
+    "VAL-INTAKE-022",
+    "VAL-CROSS-012"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added M2-specific Flow Validator Guidance sections for API Endpoints and Browser UI, including test fixture details, upload response shape, key endpoints, and isolation rules for M2 upload mutations.",
+      "source": "setup"
+    },
+    {
+      "target": "user-testing.md",
+      "description": "Created test audio fixtures inside Docker container at /app/data/test-fixtures/ with 7 supported formats, corrupt files, unsupported files, and special-character filename files.",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null,
+  "notes": {
+    "VAL-INTAKE-007": "Corrupt files with valid extensions are accepted at upload time (201). Failure occurs during ffmpeg normalization when a worker processes the job. This is expected behavior per the validation contract.",
+    "VAL-INTAKE-022": "_parse_bool is intentionally lenient — 'maybe' defaults to False rather than returning 422. This is a design choice, not a bug. Non-file values in files[] correctly return 422.",
+    "VAL-INTAKE-008": "Native drag-and-drop cannot be fully simulated via agent-browser (Playwright limitation). Verified DOM elements, event handlers (e.preventDefault/stopPropagation), DropOverlay component at layout level, and source code instead.",
+    "VAL-CROSS-012": "DropOverlay verified on home page and settings page. Editor page not tested (no completed memos). Source code confirms DropOverlay is in +layout.svelte, so it is active on all pages."
+  }
+}

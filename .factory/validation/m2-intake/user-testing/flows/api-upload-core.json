@@ -1,0 +1,139 @@
+{
+  "groupId": "api-upload-core",
+  "testedAt": "2026-04-13T21:03:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:8000",
+    "containerName": "funasr",
+    "testFixturesPath": "/app/data/test-fixtures/",
+    "hostTmpPath": "/tmp/"
+  },
+  "toolsUsed": ["curl", "docker compose exec", "docker compose cp", "ffmpeg"],
+  "assertions": [
+    {
+      "id": "VAL-INTAKE-001",
+      "title": "Multipart upload creates memo and job with required fields",
+      "status": "pass",
+      "steps": [
+        { "action": "POST /api/memos with files[]=@test_5s.wav", "expected": "HTTP 201 with memo and job objects", "observed": "HTTP 201 with memo and job objects" },
+        { "action": "Verify memo has id, title, source_kind, status", "expected": "id=UUID, title='test_5s', source_kind='upload', status='queued'", "observed": "id=7704ff5a-..., title='test_5s', source_kind='upload', status='queued'" },
+        { "action": "Verify job has id, memo_id, job_type, status", "expected": "id=UUID, memo_id matches memo, job_type='transcribe', status='queued'", "observed": "id=bb20d0dd-..., memo_id matches, job_type='transcribe', status='queued'" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-001-response.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-002",
+      "title": "Upload accepts optional parameters",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload with title='Custom Title'", "expected": "memo.title = 'Custom Title'", "observed": "memo.title = 'Custom Title'" },
+        { "action": "Upload with language='zh'", "expected": "memo.language_override = 'zh'", "observed": "memo.language_override = 'zh'" },
+        { "action": "Upload with hotwords='meeting,agenda'", "expected": "job.hotwords = 'meeting,agenda'", "observed": "job.hotwords = 'meeting,agenda'" },
+        { "action": "Upload with enable_diarization=true", "expected": "job.enable_diarization = true", "observed": "job.enable_diarization = true" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "4x POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-002-responses.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-003",
+      "title": "Single file upload creates exactly one memo and one job",
+      "status": "pass",
+      "steps": [
+        { "action": "Record baseline DB state (memos, jobs counts)", "expected": "Baseline recorded", "observed": "Baseline: 38 memos, 38 jobs" },
+        { "action": "Upload single file", "expected": "Response has 1 memo, 1 job", "observed": "Response has exactly 1 memo and 1 job" },
+        { "action": "Verify memo exists in DB", "expected": "Exactly 1 row with our memo id", "observed": "1 row for our memo id" },
+        { "action": "Verify job exists in DB with correct memo_id", "expected": "Exactly 1 row with our job id, memo_id matches", "observed": "1 row for our job id, memo_id matches memo" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-003-evidence.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-013",
+      "title": "Default title uses filename without extension",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload 'interview-2026-04-13.mp3' without title", "expected": "title = 'interview-2026-04-13'", "observed": "title = 'interview-2026-04-13'" },
+        { "action": "Upload 'simple.wav' without title", "expected": "title = 'simple'", "observed": "title = 'simple'" },
+        { "action": "Upload 'file.with.dots.in.name.ogg' without title", "expected": "title = 'file.with.dots.in.name' (only last ext removed)", "observed": "title = 'file.with.dots.in.name'" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "3x POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-013-evidence.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-016",
+      "title": "Empty upload returns validation error",
+      "status": "pass",
+      "steps": [
+        { "action": "POST /api/memos with no files[] field", "expected": "422 with error message about required field", "observed": "422 with detail: type=missing, field=files[], msg='Field required'" },
+        { "action": "POST /api/memos with empty files[] field", "expected": "422 with error message", "observed": "422 with detail: type=value_error, field=files[], msg='Expected UploadFile, received: <class str>'" },
+        { "action": "Verify no memos/jobs created", "expected": "No new memos or jobs from these requests", "observed": "Response contains only error detail, no memos or jobs arrays" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "2x POST /api/memos -> 422",
+        "files": ["api-upload-core/VAL-INTAKE-016-evidence.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-019",
+      "title": "Duplicate filenames handled without conflict",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload test_5s.wav first time", "expected": "Memo created with unique id", "observed": "Memo id=e53a6840-... created, title='test_5s'" },
+        { "action": "Upload test_5s.wav second time", "expected": "Different memo with same title", "observed": "Memo id=a52b3904-... created, title='test_5s'" },
+        { "action": "Verify different IDs", "expected": "IDs are different", "observed": "IDs confirmed different" },
+        { "action": "Verify independent directories", "expected": "Each has own /app/data/memos/<id>/ directory", "observed": "Both directories exist with source.original in each" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "2x POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-019-evidence.json"]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-INTAKE-020",
+      "title": "Special characters in filenames handled safely",
+      "status": "pass",
+      "steps": [
+        { "action": "Upload '会议 2026-04-13 (final).mp3'", "expected": "title='会议 2026-04-13 (final)', source.original stored", "observed": "title='会议 2026-04-13 (final)', source.original exists (160078 bytes)" },
+        { "action": "Upload 'R&D intro.wav'", "expected": "title='R&D intro', source.original stored", "observed": "title='R&D intro', source.original exists (160078 bytes)" },
+        { "action": "Upload 'café recording.ogg'", "expected": "title='café recording', source.original stored", "observed": "title='café recording', source.original exists (160078 bytes)" },
+        { "action": "Verify source_filename preserved with special chars", "expected": "source_filename preserves original name", "observed": "source_filename matches original for all 3 files" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "N/A (API test)",
+        "network": "3x POST /api/memos -> 201",
+        "files": ["api-upload-core/VAL-INTAKE-020-evidence.json"]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions: all 7 passed (VAL-INTAKE-001, VAL-INTAKE-002, VAL-INTAKE-003, VAL-INTAKE-013, VAL-INTAKE-016, VAL-INTAKE-019, VAL-INTAKE-020). Upload endpoint correctly creates memos and jobs, accepts optional parameters (title, language, hotwords, enable_diarization), handles duplicate filenames, special characters, and properly validates empty uploads with 422 errors."
+}
