@@ -3,29 +3,17 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter
 
+from app.db import check_db_health
+from app.schemas.system import CapabilitiesResponse, HealthResponse
+from app.services.capabilities import get_capabilities
+
 router = APIRouter(tags=["system"])
 
 DATA_DIR = Path(os.environ.get("NANOSCRIBE_DATA_DIR", "/app/data"))
-
-
-def _check_db() -> str:
-    """Check if the SQLite database is accessible and has a valid schema."""
-    db_path = DATA_DIR / "nanoscribe.db"
-    try:
-        conn = sqlite3.connect(str(db_path))
-        # integrity_check verifies the database file is valid
-        result = conn.execute("PRAGMA integrity_check").fetchone()
-        conn.close()
-        if result and result[0] == "ok":
-            return "ok"
-        return "error"
-    except Exception:
-        return "error"
 
 
 def _check_storage() -> str:
@@ -39,17 +27,35 @@ def _check_storage() -> str:
         return "error"
 
 
-@router.get("/health")
-async def health_check() -> dict:
+@router.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
     """Return component-level health status.
 
-    Always returns HTTP 200 — health checks are informational, not errors.
-    Individual components report their own status.
+    VAL-SYS-003: Always returns HTTP 200 — health checks are informational, not errors.
+    VAL-SYS-004: Individual components report their own status; partial degradation
+    never causes a 5xx response.
     """
-    return {
-        "status": "ok",
-        "backend": "ok",
-        "db": _check_db(),
-        "storage": _check_storage(),
-        "model_ready": False,  # Will be updated when ASR model loading is implemented
-    }
+    db_status = check_db_health(DATA_DIR / "nanoscribe.db")
+    storage_status = _check_storage()
+    model_ready = get_capabilities()["ready"]
+
+    all_ok = db_status == "ok" and storage_status == "ok" and model_ready
+
+    return HealthResponse(
+        status="ok" if all_ok else "degraded",
+        backend="ok",
+        db=db_status,
+        storage=storage_status,
+        model_ready=model_ready,
+    )
+
+
+@router.get("/capabilities", response_model=CapabilitiesResponse)
+async def capabilities() -> CapabilitiesResponse:
+    """Return the runtime capability manifest.
+
+    VAL-SYS-001: Returns all required fields with correct types.
+    VAL-SYS-002: Reflects actual runtime state (GPU, device, model readiness).
+    """
+    caps = get_capabilities()
+    return CapabilitiesResponse(**caps)

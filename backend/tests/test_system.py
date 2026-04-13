@@ -1,10 +1,11 @@
-"""Tests for system health endpoint and SPA serving."""
+"""Tests for system endpoints (health, capabilities) and SPA serving."""
 
 from __future__ import annotations
 
 import os
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -157,3 +158,129 @@ class TestAPIPrefix:
         assert resp.status_code == 200
         ct = resp.headers.get("content-type", "")
         assert "application/json" not in ct
+
+
+# ---------------------------------------------------------------------------
+# VAL-SYS-001 & VAL-SYS-002: Capability manifest endpoint
+# ---------------------------------------------------------------------------
+class TestCapabilitiesEndpoint:
+    """VAL-SYS-001: Capability manifest endpoint returns complete runtime manifest."""
+
+    def test_capabilities_returns_200(self, client):
+        """Capabilities endpoint returns HTTP 200."""
+        resp = client.get("/api/system/capabilities")
+        assert resp.status_code == 200
+
+    def test_capabilities_returns_json(self, client):
+        """Capabilities endpoint returns JSON."""
+        resp = client.get("/api/system/capabilities")
+        assert "application/json" in resp.headers.get("content-type", "")
+
+    def test_capabilities_has_all_required_keys(self, client):
+        """Response contains all required keys."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        required_keys = [
+            "ready",
+            "gpu",
+            "device",
+            "asr_model",
+            "vad",
+            "timestamps",
+            "speaker_diarization",
+            "hotwords",
+            "language_auto_detect",
+            "recording",
+        ]
+        for key in required_keys:
+            assert key in data, f"Missing required key: {key}"
+
+    def test_boolean_fields_are_booleans(self, client):
+        """Boolean capability flags have true/false values."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        boolean_keys = [
+            "ready",
+            "gpu",
+            "timestamps",
+            "speaker_diarization",
+            "hotwords",
+            "language_auto_detect",
+            "recording",
+        ]
+        for key in boolean_keys:
+            assert isinstance(data[key], bool), f"Key '{key}' should be boolean, got {type(data[key])}"
+
+    def test_string_fields_are_strings(self, client):
+        """String metadata fields are strings."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        string_keys = ["device", "asr_model", "vad"]
+        for key in string_keys:
+            assert isinstance(data[key], str), f"Key '{key}' should be string, got {type(data[key])}"
+
+
+class TestCapabilitiesRuntimeState:
+    """VAL-SYS-002: Capability manifest reflects actual runtime state."""
+
+    def test_gpu_false_when_no_cuda(self, client):
+        """Without CUDA, gpu is false and device indicates CPU."""
+        import importlib
+
+        import app.services.capabilities as cap_mod
+
+        with patch.dict("sys.modules", {"torch": None}):
+            # Force re-detection with torch unavailable
+            importlib.reload(cap_mod)
+
+            resp = client.get("/api/system/capabilities")
+            data = resp.json()
+            assert data["gpu"] is False
+            assert data["device"] == "cpu"
+
+        # Restore real module
+        importlib.reload(cap_mod)
+
+    def test_gpu_true_when_cuda_available(self, client):
+        """With CUDA available, gpu is true and device contains cuda info."""
+        from unittest.mock import MagicMock
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+        mock_torch.cuda.get_device_name.return_value = "NVIDIA RTX 3070"
+        mock_torch.cuda.device_count.return_value = 1
+
+        import importlib
+
+        import app.services.capabilities as cap_mod
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            importlib.reload(cap_mod)
+
+            resp = client.get("/api/system/capabilities")
+            data = resp.json()
+            assert data["gpu"] is True
+            assert "cuda" in data["device"].lower() or "nvidia" in data["device"].lower()
+
+        # Restore real module
+        importlib.reload(cap_mod)
+
+    def test_ready_false_when_model_not_loaded(self, client):
+        """Ready is false when ASR model is not loaded."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        assert data["ready"] is False
+
+    def test_asr_model_is_nonempty_string(self, client):
+        """ASR model identifier is a non-empty string."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        assert isinstance(data["asr_model"], str)
+        assert len(data["asr_model"]) > 0
+
+    def test_vad_model_is_nonempty_string(self, client):
+        """VAD model identifier is a non-empty string."""
+        resp = client.get("/api/system/capabilities")
+        data = resp.json()
+        assert isinstance(data["vad"], str)
+        assert len(data["vad"]) > 0

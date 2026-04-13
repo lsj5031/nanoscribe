@@ -1,1 +1,1 @@
-
+"""Core configuration and dependencies."""
