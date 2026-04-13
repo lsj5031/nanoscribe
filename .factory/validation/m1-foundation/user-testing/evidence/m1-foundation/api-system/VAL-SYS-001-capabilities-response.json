@@ -1,0 +1,12 @@
+{
+  "ready": false,
+  "gpu": true,
+  "device": "cuda:NVIDIA GeForce RTX 3070",
+  "asr_model": "FunAudioLLM/Fun-ASR-Nano-2512",
+  "vad": "fsmn-vad",
+  "timestamps": true,
+  "speaker_diarization": false,
+  "hotwords": true,
+  "language_auto_detect": true,
+  "recording": true
+}

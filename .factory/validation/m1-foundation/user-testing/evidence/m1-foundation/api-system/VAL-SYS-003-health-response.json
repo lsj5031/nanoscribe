@@ -1,0 +1,7 @@
+{
+  "status": "degraded",
+  "backend": "ok",
+  "db": "ok",
+  "storage": "ok",
+  "model_ready": false
+}
