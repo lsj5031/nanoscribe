@@ -4,17 +4,24 @@ services:
       context: .
       args:
         BASE_IMAGE: ${BASE_IMAGE:-glm-asr-glm-asr:latest}
+      target: ${DOCKER_TARGET:-dev}
     image: funasr:latest
     container_name: funasr
     stdin_open: true
     tty: true
+    ports:
+      - "${HOST_PORT:-8000}:8000"
     volumes:
       - ~/.cache/huggingface:/home/appuser/.cache/huggingface
       - ~/.cache/modelscope:/home/appuser/.cache/modelscope
       - ./data:/app/data
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
     environment:
       - HF_HUB_OFFLINE=0
       - MODELSCOPE_CACHE=/home/appuser/.cache/modelscope
+      - NANOSCRIBE_DATA_DIR=/app/data
+      - NANOSCRIBE_STATIC_DIR=/app/static
     deploy:
       resources:
         reservations:
@@ -22,4 +29,14 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: /bin/bash
+    working_dir: /app/backend
+    command:
+      - /app/venv/bin/python
+      - -m
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
