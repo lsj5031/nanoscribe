@@ -430,17 +430,78 @@ class TestFTS5SearchIndex:
         assert "text" in sql
 
     def test_fts5_basic_search(self, conn: sqlite3.Connection) -> None:
-        """FTS5 MATCH query should work for basic search."""
+        """FTS5 MATCH query should work for basic search on memo titles."""
         conn.execute(
             "INSERT INTO memos (id, title, source_kind, source_filename) "
             "VALUES ('memo-fts1', 'Meeting Notes', 'upload', 'meeting.wav')"
         )
-        conn.execute(
-            "INSERT INTO memos_fts (rowid, title, text) "
-            "VALUES (1, 'Meeting Notes', 'This is a meeting about the project')"
-        )
+        # The trigger should auto-insert the title into FTS
         result = conn.execute("SELECT * FROM memos_fts WHERE memos_fts MATCH 'meeting'").fetchall()
         assert len(result) > 0
+
+    def test_fts5_multi_segment_search(self, conn: sqlite3.Connection) -> None:
+        """All segments per memo must be searchable via FTS MATCH.
+
+        Regression test: the original triggers used the memo's rowid as the
+        FTS rowid, so only the LAST segment per memo was searchable.
+        """
+        conn.execute(
+            "INSERT INTO memos (id, title, source_kind, source_filename) "
+            "VALUES ('memo-multi', 'Project Call', 'upload', 'call.wav')"
+        )
+        conn.execute(
+            "INSERT INTO segments (id, memo_id, ordinal, start_ms, end_ms, text) "
+            "VALUES ('seg-m1', 'memo-multi', 1, 0, 5000, 'budget discussion')"
+        )
+        conn.execute(
+            "INSERT INTO segments (id, memo_id, ordinal, start_ms, end_ms, text) "
+            "VALUES ('seg-m2', 'memo-multi', 2, 5000, 10000, 'timeline review')"
+        )
+        conn.execute(
+            "INSERT INTO segments (id, memo_id, ordinal, start_ms, end_ms, text) "
+            "VALUES ('seg-m3', 'memo-multi', 3, 10000, 15000, 'risk assessment')"
+        )
+
+        # ALL three segments must be independently searchable
+        budget = conn.execute("SELECT * FROM memos_fts WHERE memos_fts MATCH 'budget'").fetchall()
+        assert len(budget) >= 1, "Segment 1 'budget discussion' should be searchable"
+
+        timeline = conn.execute("SELECT * FROM memos_fts WHERE memos_fts MATCH 'timeline'").fetchall()
+        assert len(timeline) >= 1, "Segment 2 'timeline review' should be searchable"
+
+        risk = conn.execute("SELECT * FROM memos_fts WHERE memos_fts MATCH 'risk'").fetchall()
+        assert len(risk) >= 1, "Segment 3 'risk assessment' should be searchable"
+
+    def test_fts5_segment_search_returns_correct_memo_id(self, conn: sqlite3.Connection) -> None:
+        """FTS search should allow looking up the correct memo_id for each segment."""
+        conn.execute(
+            "INSERT INTO memos (id, title, source_kind, source_filename) VALUES ('memo-a', 'Memo A', 'upload', 'a.wav')"
+        )
+        conn.execute(
+            "INSERT INTO memos (id, title, source_kind, source_filename) VALUES ('memo-b', 'Memo B', 'upload', 'b.wav')"
+        )
+        conn.execute(
+            "INSERT INTO segments (id, memo_id, ordinal, start_ms, end_ms, text) "
+            "VALUES ('seg-a1', 'memo-a', 1, 0, 5000, 'alpha bravo')"
+        )
+        conn.execute(
+            "INSERT INTO segments (id, memo_id, ordinal, start_ms, end_ms, text) "
+            "VALUES ('seg-b1', 'memo-b', 1, 0, 5000, 'charlie delta')"
+        )
+
+        # Search for 'alpha' should find segment from memo-a
+        results = conn.execute(
+            "SELECT s.memo_id FROM memos_fts f JOIN segments s ON s.rowid = f.rowid WHERE memos_fts MATCH 'alpha'"
+        ).fetchall()
+        memo_ids = [r["memo_id"] for r in results]
+        assert "memo-a" in memo_ids, "Searching 'alpha' should find memo-a"
+
+        # Search for 'charlie' should find segment from memo-b
+        results = conn.execute(
+            "SELECT s.memo_id FROM memos_fts f JOIN segments s ON s.rowid = f.rowid WHERE memos_fts MATCH 'charlie'"
+        ).fetchall()
+        memo_ids = [r["memo_id"] for r in results]
+        assert "memo-b" in memo_ids, "Searching 'charlie' should find memo-b"
 
     def test_fts5_content_sync_with_memos(self, conn: sqlite3.Connection) -> None:
         """FTS5 should support content= option for external content table
