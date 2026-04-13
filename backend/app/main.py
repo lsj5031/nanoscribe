@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
+from app.api.jobs import router as jobs_router
 from app.api.memos import router as memos_router
 from app.api.system import router as system_router
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _settings = get_settings()
 DATA_DIR = _settings.data_dir
@@ -45,6 +50,20 @@ def create_app() -> FastAPI:
     # Register API routes under /api prefix
     app.include_router(system_router, prefix="/api/system")
     app.include_router(memos_router, prefix="/api")
+    app.include_router(jobs_router, prefix="/api")
+
+    # Startup: recover stale jobs and start worker
+    @app.on_event("startup")
+    async def _on_startup() -> None:
+        from app.services import jobs as job_service
+        from app.services.worker import start_worker
+
+        db_path = DATA_DIR / "nanoscribe.db"
+        recovered = job_service.recover_stale_jobs(db_path)
+        if recovered > 0:
+            logger.info("Recovered %d stale jobs on startup", recovered)
+
+        await start_worker(db_path)
 
     # Serve built SPA static files in production
     # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png

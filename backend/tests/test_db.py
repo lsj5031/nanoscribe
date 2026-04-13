@@ -176,6 +176,7 @@ class TestJobsTable:
         "created_at",
         "started_at",
         "finished_at",
+        "updated_at",
     }
 
     def test_jobs_table_exists(self, conn: sqlite3.Connection) -> None:
