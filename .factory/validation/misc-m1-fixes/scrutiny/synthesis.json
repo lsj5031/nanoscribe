@@ -1,0 +1,36 @@
+{
+  "milestone": "misc-m1-fixes",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && python -m pytest tests/ -x'", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ty check .'", "exitCode": 0 },
+    "lint": { "passed": true, "command": "docker compose exec funasr bash -c 'cd /app/backend && ruff check . && cd /app/frontend && pnpm check'", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added path traversal protection pattern to architecture.md — reusable security pattern for file-serving endpoints using pathlib.resolve() + relative_to().",
+      "sourceFeature": "misc-m1-nonblocking-fixes"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
+    {
+      "observation": "AGENTS.md already documents the convention that all env vars must be read through core/config.py Settings class.",
+      "reason": "already-documented"
+    },
+    {
+      "observation": "Worker used module-level singleton pattern inconsistently vs deferred factory in db/migrate.py.",
+      "reason": "acceptable inconsistency due to import ordering constraints, not systemic"
+    }
+  ],
+  "previousRound": null
+}

@@ -42,6 +42,7 @@ FastAPI Backend
 - Capability manifest drives frontend UI surface
 - Diarization is a separate pass from ASR, merged by timestamp overlap
 - Reprocessing never silently overwrites user edits
+- SPA catch-all route uses path traversal protection via `pathlib.resolve()` + `relative_to()` to verify served files are within STATIC_DIR
 
 ## External Dependencies
 
