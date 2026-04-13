@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from app.db.migrate import run_migrations  # noqa: F401
+
 
 def get_connection(db_path: str | Path) -> sqlite3.Connection:
     """Return a SQLite connection with WAL mode and foreign keys enabled.
