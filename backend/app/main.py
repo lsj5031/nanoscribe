@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
 
+from app.api.export import router as export_router
 from app.api.jobs import router as jobs_router
 from app.api.library import router as library_router
 from app.api.memos import router as memos_router
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(search_router, prefix="/api")
     app.include_router(segments_router, prefix="/api")
     app.include_router(speakers_router, prefix="/api")
+    app.include_router(export_router, prefix="/api")
 
     # Startup: recover stale jobs and start worker
     @app.on_event("startup")
