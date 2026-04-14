@@ -45,6 +45,18 @@
     }
   });
 
+  // Flush pending saves before leaving the page
+  $effect(() => {
+    function handleBeforeUnload() {
+      flushSave();
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      flushSave();
+    };
+  });
+
   // Connect transcript seek callback to waveform
   $effect(() => {
     if (transcriptPane && waveformPane) {

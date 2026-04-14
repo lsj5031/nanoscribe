@@ -252,9 +252,12 @@ async function _flushPendingSaves(): Promise<void> {
 
     if (resp.status === 409) {
       // Conflict: refresh segments from server
+      // FastAPI wraps the response in a "detail" key
       const conflictData = await resp.json();
-      state.revision = conflictData.current_revision;
-      state.segments = conflictData.current_segments;
+      const detail = conflictData.detail ?? conflictData;
+      state.revision = detail.current_revision ?? conflictData.current_revision;
+      state.segments = detail.current_segments ?? conflictData.current_segments ?? [];
+      state.saving = false;
       state.saveError = 'Transcript was modified by another session. Refreshed.';
       return;
     }

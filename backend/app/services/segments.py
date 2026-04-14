@@ -99,6 +99,13 @@ def patch_segments(
 
         current_revision = memo["transcript_revision"]
 
+        if not updates:
+            return {
+                "memo_id": memo_id,
+                "revision": current_revision,
+                "updated_segments": [],
+            }
+
         if base_revision != current_revision:
             rows = conn.execute(
                 "SELECT id, ordinal, start_ms, end_ms, text, speaker_key, confidence, edited "
