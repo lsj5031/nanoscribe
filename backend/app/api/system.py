@@ -6,8 +6,8 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.db import check_db_health
-from app.schemas.system import CapabilitiesResponse, HealthResponse, StatusResponse
-from app.services.capabilities import get_capabilities
+from app.schemas.system import CapabilitiesResponse, HealthResponse, ReadinessResponse, StatusResponse
+from app.services.capabilities import get_capabilities, get_readiness
 from app.services.status import get_system_status
 
 router = APIRouter(tags=["system"])
@@ -69,3 +69,15 @@ async def system_status() -> StatusResponse:
     """
     status = get_system_status()
     return StatusResponse(**status)
+
+
+@router.get("/readiness", response_model=ReadinessResponse)
+async def readiness() -> ReadinessResponse:
+    """Return model readiness status with per-model cache state.
+
+    Checks whether each required model (ASR, VAD, Punc, Diarization)
+    is cached locally. Used by the frontend to show a first-run
+    readiness card when models are not yet available.
+    """
+    data = get_readiness()
+    return ReadinessResponse(**data)

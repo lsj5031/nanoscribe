@@ -33,6 +33,23 @@ class CapabilitiesResponse(BaseModel):
     recording: bool
 
 
+class ModelReadiness(BaseModel):
+    """Readiness info for a single model."""
+
+    name: str
+    loaded: bool
+    downloading: bool
+
+
+class ReadinessResponse(BaseModel):
+    """Response schema for GET /api/system/readiness."""
+
+    ready: bool
+    models: dict[str, ModelReadiness]
+    device: str
+    gpu_available: bool
+
+
 class StatusResponse(BaseModel):
     """Response schema for GET /api/system/status."""
 

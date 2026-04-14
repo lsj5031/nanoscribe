@@ -545,3 +545,130 @@ class TestStatusEndpoint:
 
         resp = client.get("/api/system/status")
         assert resp.json()["memo_count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Readiness endpoint tests
+# ---------------------------------------------------------------------------
+class TestReadinessEndpoint:
+    """GET /api/system/readiness returns per-model readiness status."""
+
+    def test_readiness_returns_200(self, client):
+        """Readiness endpoint returns HTTP 200."""
+        resp = client.get("/api/system/readiness")
+        assert resp.status_code == 200
+
+    def test_readiness_has_required_fields(self, client):
+        """Readiness response has all required top-level fields."""
+        resp = client.get("/api/system/readiness")
+        data = resp.json()
+        assert "ready" in data
+        assert "models" in data
+        assert "device" in data
+        assert "gpu_available" in data
+
+    def test_readiness_models_has_all_keys(self, client):
+        """Models dict has asr, vad, punc, diarization keys."""
+        resp = client.get("/api/system/readiness")
+        data = resp.json()
+        for key in ("asr", "vad", "punc", "diarization"):
+            assert key in data["models"], f"Missing model key: {key}"
+
+    def test_readiness_model_entries_have_required_fields(self, client):
+        """Each model entry has name, loaded, downloading fields."""
+        resp = client.get("/api/system/readiness")
+        data = resp.json()
+        for key, model_info in data["models"].items():
+            assert "name" in model_info, f"Missing 'name' for model {key}"
+            assert "loaded" in model_info, f"Missing 'loaded' for model {key}"
+            assert "downloading" in model_info, f"Missing 'downloading' for model {key}"
+            assert isinstance(model_info["loaded"], bool)
+            assert isinstance(model_info["downloading"], bool)
+            assert isinstance(model_info["name"], str)
+
+    def test_readiness_ready_is_boolean(self, client):
+        """ready field is a boolean."""
+        resp = client.get("/api/system/readiness")
+        assert isinstance(resp.json()["ready"], bool)
+
+    def test_readiness_gpu_available_is_boolean(self, client):
+        """gpu_available field is a boolean."""
+        resp = client.get("/api/system/readiness")
+        assert isinstance(resp.json()["gpu_available"], bool)
+
+    def test_readiness_device_is_string(self, client):
+        """device field is a non-empty string."""
+        resp = client.get("/api/system/readiness")
+        data = resp.json()
+        assert isinstance(data["device"], str)
+        assert len(data["device"]) > 0
+
+    def test_readiness_not_ready_when_no_cache(self, client, tmp_path):
+        """Readiness reports not ready when model cache directories don't exist."""
+        import app.services.capabilities as cap_mod
+
+        original = cap_mod._get_modelscope_cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "nonexistent_cache"
+
+        try:
+            resp = client.get("/api/system/readiness")
+            data = resp.json()
+            assert data["ready"] is False
+            for model_info in data["models"].values():
+                assert model_info["loaded"] is False
+                assert model_info["downloading"] is False
+        finally:
+            cap_mod._get_modelscope_cache_dir = original
+
+    def test_readiness_shows_downloading_when_empty_dir(self, client, tmp_path):
+        """Readiness reports downloading=True when model dir exists but has no files."""
+        import app.services.capabilities as cap_mod
+
+        cache_dir = tmp_path / "ms_cache"
+        # Create empty VAD model directory
+        vad_dir = cache_dir / "models" / "iic" / "speech_fsmn_vad_zh-cn-16k-common-pytorch"
+        vad_dir.mkdir(parents=True)
+
+        original = cap_mod._get_modelscope_cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: cache_dir
+
+        try:
+            resp = client.get("/api/system/readiness")
+            data = resp.json()
+            assert data["ready"] is False
+            assert data["models"]["vad"]["downloading"] is True
+            assert data["models"]["vad"]["loaded"] is False
+        finally:
+            cap_mod._get_modelscope_cache_dir = original
+
+    def test_readiness_shows_cached_when_files_exist(self, client, tmp_path):
+        """Readiness reports loaded=False (not in memory) but downloading=False when files exist."""
+        import app.services.capabilities as cap_mod
+
+        cache_dir = tmp_path / "ms_cache"
+        # Create VAD model directory with a file
+        vad_dir = cache_dir / "models" / "iic" / "speech_fsmn_vad_zh-cn-16k-common-pytorch"
+        vad_dir.mkdir(parents=True)
+        (vad_dir / "model.pb").write_text("fake model")
+
+        original = cap_mod._get_modelscope_cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: cache_dir
+
+        try:
+            resp = client.get("/api/system/readiness")
+            data = resp.json()
+            # Not loaded in memory, but cached (not downloading)
+            assert data["models"]["vad"]["downloading"] is False
+            # loaded is False because models aren't loaded in memory
+            assert data["models"]["vad"]["loaded"] is False
+        finally:
+            cap_mod._get_modelscope_cache_dir = original
+
+    def test_readiness_model_names(self, client):
+        """Model names use friendly display names."""
+        resp = client.get("/api/system/readiness")
+        data = resp.json()
+        assert data["models"]["asr"]["name"] == "Fun-ASR-Nano-2512"
+        assert data["models"]["vad"]["name"] == "fsmn-vad"
+        assert data["models"]["punc"]["name"] == "ct-punc"
+        assert data["models"]["diarization"]["name"] == "CAM++"
