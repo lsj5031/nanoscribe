@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from starlette.responses import Response
 
 from app.core.config import get_settings
-from app.db import get_connection
+from app.db import db_connection
 from app.schemas.segments import (
     ConflictResponse,
     PatchSegmentsRequest,
@@ -103,13 +103,12 @@ async def get_audio(memo_id: str) -> Response:
     if source.is_file():
         content_type = "application/octet-stream"  # safe default
         try:
-            conn = get_connection(DATA_DIR / "nanoscribe.db")
-            row = conn.execute("SELECT source_filename FROM memos WHERE id = ?", (memo_id,)).fetchone()
-            conn.close()
-            if row and row[0]:
-                guessed = _content_type_for(row[0])
-                if guessed:
-                    content_type = guessed
+            with db_connection(DATA_DIR / "nanoscribe.db") as conn:
+                row = conn.execute("SELECT source_filename FROM memos WHERE id = ?", (memo_id,)).fetchone()
+                if row and row[0]:
+                    guessed = _content_type_for(row[0])
+                    if guessed:
+                        content_type = guessed
         except Exception:
             logger.debug("content_type_lookup_failed", exc_info=True)
         return _stream_audio(source, content_type)

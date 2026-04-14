@@ -11,6 +11,7 @@ from pathlib import Path
 import structlog
 
 from app.core.config import get_settings
+from app.db import db_connection
 from app.services.capabilities import _detect_gpu, _detect_model_ready
 
 logger = structlog.get_logger(__name__)
@@ -63,7 +64,7 @@ def _compute_storage_mb(data_dir: Path) -> float:
         for f in data_dir.rglob("*"):
             if f.is_file():
                 total += f.stat().st_size
-    except Exception:
+    except OSError:
         logger.debug("storage_size_computation_failed", exc_info=True)
     return round(total / (1024 * 1024), 1)
 
@@ -73,13 +74,10 @@ def _count_memos(db_path: Path) -> int:
     if not db_path.exists():
         return 0
     try:
-        conn = sqlite3.connect(str(db_path))
-        try:
+        with db_connection(db_path) as conn:
             result = conn.execute("SELECT COUNT(*) FROM memos").fetchone()
             return result[0] if result else 0
-        finally:
-            conn.close()
-    except Exception:
+    except sqlite3.OperationalError:
         logger.debug("memo_count_failed", exc_info=True)
         return 0
 
@@ -92,8 +90,8 @@ def _get_cached_models() -> list[str]:
 
         if _models is not None:
             models.append(_settings.asr_model)
-    except Exception:
-        pass
+    except ImportError:
+        logger.debug("transcription_module_not_available")
 
     # Always list the expected model names
     expected = [_settings.asr_model, _settings.vad_model, _settings.punc_model]
@@ -124,7 +122,7 @@ def _get_cached_models() -> list[str]:
                         if "CAM++" not in result:
                             result.append("CAM++")
                         break
-    except Exception:
-        pass
+    except OSError:
+        logger.debug("cam_model_cache_check_failed", exc_info=True)
 
     return result

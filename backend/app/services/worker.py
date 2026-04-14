@@ -146,12 +146,9 @@ class WorkerLoop:
         # Extract duration
         try:
             duration_ms = extract_duration_ms(normalized_path)
-            conn = self._get_conn()
-            try:
+            with self._db_connection() as conn:
                 conn.execute("UPDATE memos SET duration_ms = ? WHERE id = ?", (duration_ms, memo_id))
                 conn.commit()
-            finally:
-                conn.close()
             logger.info("duration_extracted", duration_ms=duration_ms)
         except NormalizationError:
             logger.debug("duration_extraction_skipped")  # Non-fatal
@@ -289,11 +286,11 @@ class WorkerLoop:
         get_sse_manager().publish_cancelled(job_id)
         logger.info("job_cancelled")
 
-    def _get_conn(self):
-        """Get a database connection."""
-        from app.db import get_connection
+    def _db_connection(self):
+        """Return a db_connection context manager for this worker's database."""
+        from app.db import db_connection
 
-        return get_connection(self.db_path)
+        return db_connection(self.db_path)
 
     def stop(self) -> None:
         """Signal the worker to stop after current job completes."""

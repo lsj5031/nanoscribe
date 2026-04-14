@@ -30,7 +30,7 @@ def _detect_gpu() -> tuple[bool, str]:
     except ImportError:
         logger.debug("pytorch_not_installed", device="cpu")
         return False, "cpu"
-    except Exception as exc:
+    except RuntimeError as exc:
         logger.warning("gpu_detection_failed", error=str(exc))
         return False, "cpu"
 

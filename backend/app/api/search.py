@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter, Query
 
 from app.core.config import get_settings
 from app.schemas.search import SearchResponse
 from app.services import search as search_service
 
+logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["search"])
 
 _settings = get_settings()
@@ -36,8 +38,9 @@ async def search(q: str = Query("", description="Search query")) -> SearchRespon
 
     try:
         result = search_service.search(db_path, q)
-    except Exception:
+    except Exception as exc:
         # Catch any unexpected FTS5 errors and return empty results
+        logger.warning("search_failed", error=str(exc))
         return SearchResponse(results=[], total=0)
 
     return SearchResponse(**result)

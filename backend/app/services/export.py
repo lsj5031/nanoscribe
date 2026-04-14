@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.db import get_connection
+from app.db import db_connection
 
 
 def _now_iso() -> str:
@@ -38,8 +38,7 @@ def _get_export_data(db_path: str | Path, memo_id: str) -> dict[str, Any] | None
     Returns None if memo not found.
     Returns {"memo": ..., "segments": [...], "speakers": {...}} otherwise.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute(
             "SELECT id, title, duration_ms, transcript_revision FROM memos WHERE id = ?",
             (memo_id,),
@@ -83,8 +82,6 @@ def _get_export_data(db_path: str | Path, memo_id: str) -> dict[str, Any] | None
             "segments": segments,
             "speakers": speakers,
         }
-    finally:
-        conn.close()
 
 
 def export_txt(db_path: str | Path, memo_id: str) -> tuple[str, str] | None:

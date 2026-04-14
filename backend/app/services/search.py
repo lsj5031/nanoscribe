@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app.db import db_connection, in_placeholders
+
 MAX_RESULTS = 50
 SEGMENT_PREVIEW_LENGTH = 200
 
@@ -24,9 +26,7 @@ def search(
 
     safe_q = _escape_fts_query(q)
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    try:
+    with db_connection(db_path, row_factory=sqlite3.Row) as conn:
         results: list[dict[str, Any]] = []
 
         # Use FTS5 to find candidate memo IDs (handles fuzzy/tokenized matching)
@@ -37,12 +37,10 @@ def search(
 
         if matching_memo_ids:
             # Use FTS5 candidates narrowed by LIKE for precise matching
-            placeholders = ",".join("?" for _ in matching_memo_ids)
+            ph = in_placeholders(len(matching_memo_ids))
 
             title_rows = conn.execute(
-                f"SELECT m.id AS memo_id, m.title AS memo_title "
-                f"FROM memos m "
-                f"WHERE m.id IN ({placeholders}) AND m.title LIKE ?",
+                f"SELECT m.id AS memo_id, m.title AS memo_title FROM memos m WHERE m.id IN ({ph}) AND m.title LIKE ?",
                 [*matching_memo_ids, like_pattern],
             ).fetchall()
 
@@ -52,7 +50,7 @@ def search(
                 f"m.title AS memo_title "
                 f"FROM segments s "
                 f"JOIN memos m ON m.id = s.memo_id "
-                f"WHERE s.memo_id IN ({placeholders}) AND s.text LIKE ?",
+                f"WHERE s.memo_id IN ({ph}) AND s.text LIKE ?",
                 [*matching_memo_ids, like_pattern],
             ).fetchall()
         else:
@@ -105,8 +103,6 @@ def search(
         results = results[:MAX_RESULTS]
 
         return {"results": results, "total": total}
-    finally:
-        conn.close()
 
 
 def _escape_fts_query(q: str) -> str:

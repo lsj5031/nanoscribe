@@ -192,13 +192,10 @@ async def retry_memo(memo_id: str) -> JobDetailResponse:
     db_path = DATA_DIR / "nanoscribe.db"
 
     # Check that memo exists
-    from app.db import get_connection
+    from app.db import db_connection
 
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute("SELECT id, status FROM memos WHERE id = ?", (memo_id,)).fetchone()
-    finally:
-        conn.close()
 
     if memo is None:
         raise HTTPException(status_code=404, detail="Memo not found")
@@ -239,16 +236,13 @@ async def reprocess_memo(memo_id: str, confirm: bool = False) -> JobDetailRespon
     db_path = DATA_DIR / "nanoscribe.db"
 
     # Check that memo exists
-    from app.db import get_connection
+    from app.db import db_connection
 
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute(
             "SELECT id, status, transcript_revision FROM memos WHERE id = ?",
             (memo_id,),
         ).fetchone()
-    finally:
-        conn.close()
 
     if memo is None:
         raise HTTPException(status_code=404, detail="Memo not found")

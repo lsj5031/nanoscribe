@@ -7,9 +7,7 @@ Enables WAL mode and foreign key constraints on each connection.
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
-from typing import Optional, Union
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -21,7 +19,7 @@ def _default_db_path() -> Path:
     return get_settings().db_path
 
 
-def run_migrations(db_path: Optional[Union[str, Path]] = None) -> None:
+def run_migrations(db_path: str | Path | None = None) -> None:
     """Apply all pending migrations to the database.
 
     Creates the database file if it doesn't exist. Creates the _migrations
@@ -37,11 +35,9 @@ def run_migrations(db_path: Optional[Union[str, Path]] = None) -> None:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(db_path))
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
+    from app.db import db_connection
 
+    with db_connection(db_path) as conn:
         # Create migration tracking table
         conn.execute(
             """
@@ -67,6 +63,3 @@ def run_migrations(db_path: Optional[Union[str, Path]] = None) -> None:
             conn.executescript(sql)
             conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
             conn.commit()
-
-    finally:
-        conn.close()

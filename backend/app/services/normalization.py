@@ -170,18 +170,22 @@ def extract_waveform_peaks(
         duration_seconds = total_samples / framerate
         n_buckets = max(WAVEFORM_MIN_PEAKS, int(duration_seconds * peaks_per_second))
 
-        # Reshape into buckets and compute max absolute amplitude per bucket
-        bucket_size = total_samples / n_buckets
-        peaks = []
-        for i in range(n_buckets):
-            start = int(i * bucket_size)
-            end = int((i + 1) * bucket_size)
-            end = min(end, total_samples)
-            if start >= end:
-                continue
-            chunk = audio[start:end]
+        # Vectorized bucket computation: compute max absolute amplitude per bucket
+        # Trim audio to exact multiple of n_buckets for clean reshape
+        trim_len = n_buckets * (total_samples // n_buckets)
+        if trim_len > 0:
+            trimmed = audio[:trim_len].reshape(n_buckets, -1)
             # Normalize to [0, 1] range (32767 is max for int16)
-            peak = float(np.max(np.abs(chunk))) / 32767.0
+            bucket_peaks = np.max(np.abs(trimmed), axis=1) / 32767.0
+            peaks = [round(float(p), 4) for p in bucket_peaks]
+        else:
+            peaks = []
+
+        # Handle remaining samples that didn't fit in reshape
+        # When trim_len == 0 (very short audio), all samples are the remainder
+        if trim_len < total_samples:
+            remainder = audio[trim_len:]
+            peak = float(np.max(np.abs(remainder))) / 32767.0
             peaks.append(round(peak, 4))
 
         # Write JSON

@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.db import get_connection
+from app.db import db_connection, in_placeholders
 
 # Terminal states — no transitions allowed out of these
 TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})
@@ -63,8 +63,7 @@ def create_job(
     """
     job_id = str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO jobs
@@ -79,8 +78,6 @@ def create_job(
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def get_job(db_path: str | Path, job_id: str) -> dict[str, Any] | None:
@@ -88,15 +85,12 @@ def get_job(db_path: str | Path, job_id: str) -> dict[str, Any] | None:
 
     VAL-JOB-004: Returns complete job state or None if not found.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if row is None:
             return None
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def get_jobs_for_memo(db_path: str | Path, memo_id: str) -> list[dict[str, Any]]:
@@ -104,8 +98,7 @@ def get_jobs_for_memo(db_path: str | Path, memo_id: str) -> list[dict[str, Any]]
 
     VAL-JOB-017: Returns jobs in reverse chronological order.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         rows = conn.execute(
             "SELECT * FROM jobs WHERE memo_id = ? ORDER BY created_at DESC",
             (memo_id,),
@@ -119,8 +112,6 @@ def get_jobs_for_memo(db_path: str | Path, memo_id: str) -> list[dict[str, Any]]
             ).description
         ]
         return [dict(zip(col_names, row)) for row in rows]
-    finally:
-        conn.close()
 
 
 def get_active_job(db_path: str | Path) -> dict[str, Any] | None:
@@ -129,11 +120,10 @@ def get_active_job(db_path: str | Path) -> dict[str, Any] | None:
     Returns the first job found in an active state.
     VAL-JOB-005: There should only be one active GPU job at a time.
     """
-    conn = get_connection(db_path)
-    try:
-        placeholders = ",".join("?" for _ in ACTIVE_STATES)
+    with db_connection(db_path) as conn:
+        ph = in_placeholders(len(ACTIVE_STATES))
         row = conn.execute(
-            f"SELECT * FROM jobs WHERE status IN ({placeholders}) ORDER BY created_at ASC LIMIT 1",
+            f"SELECT * FROM jobs WHERE status IN ({ph}) ORDER BY created_at ASC LIMIT 1",
             list(ACTIVE_STATES),
         ).fetchone()
         if row is None:
@@ -141,13 +131,11 @@ def get_active_job(db_path: str | Path) -> dict[str, Any] | None:
         col_names = [
             desc[0]
             for desc in conn.execute(
-                f"SELECT * FROM jobs WHERE status IN ({placeholders}) ORDER BY created_at ASC LIMIT 1",
+                f"SELECT * FROM jobs WHERE status IN ({ph}) ORDER BY created_at ASC LIMIT 1",
                 list(ACTIVE_STATES),
             ).description
         ]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def get_next_queued_job(db_path: str | Path) -> dict[str, Any] | None:
@@ -155,8 +143,7 @@ def get_next_queued_job(db_path: str | Path) -> dict[str, Any] | None:
 
     Returns None if no active job is running and no queued jobs exist.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1").fetchone()
         if row is None:
             return None
@@ -167,8 +154,6 @@ def get_next_queued_job(db_path: str | Path) -> dict[str, Any] | None:
             ).description
         ]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def transition_job(db_path: str | Path, job_id: str, new_status: str) -> dict[str, Any]:
@@ -177,8 +162,7 @@ def transition_job(db_path: str | Path, job_id: str, new_status: str) -> dict[st
     VAL-JOB-002: Enforces valid state machine transitions.
     Updates stage, started_at/finished_at, progress, and memo status.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         job = conn.execute("SELECT status, memo_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if job is None:
             raise InvalidTransitionError(f"Job {job_id} not found")
@@ -200,7 +184,7 @@ def transition_job(db_path: str | Path, job_id: str, new_status: str) -> dict[st
 
         now = _now_iso()
 
-        # Build update
+        # Build update — column names are hardcoded constants, not user input
         updates: list[str] = ["status = ?", "stage = ?", "updated_at = ?"]
         params: list[Any] = [new_status, new_status, now]
 
@@ -232,8 +216,6 @@ def transition_job(db_path: str | Path, job_id: str, new_status: str) -> dict[st
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def fail_job(
@@ -247,8 +229,7 @@ def fail_job(
     VAL-JOB-006/015: Stores error_code and error_message.
     VAL-JOB-022: Worker survives — job is marked failed, next job can proceed.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         now = _now_iso()
         conn.execute(
             """
@@ -273,8 +254,6 @@ def fail_job(
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def update_progress(db_path: str | Path, job_id: str, progress: float) -> None:
@@ -282,8 +261,7 @@ def update_progress(db_path: str | Path, job_id: str, progress: float) -> None:
 
     VAL-JOB-003: Progress is monotonically increasing and bounded.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         current = conn.execute("SELECT progress FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if current is None:
             return
@@ -300,8 +278,6 @@ def update_progress(db_path: str | Path, job_id: str, progress: float) -> None:
             (new_progress, now, job_id),
         )
         conn.commit()
-    finally:
-        conn.close()
 
 
 def cancel_job(db_path: str | Path, job_id: str) -> bool:
@@ -310,8 +286,7 @@ def cancel_job(db_path: str | Path, job_id: str) -> bool:
     VAL-JOB-004/005: Cancel transitions to cancelled state.
     VAL-TRANS-005: Cancel of terminal job returns False (API returns 409).
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         job = conn.execute("SELECT status, memo_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
         if job is None:
             return False
@@ -338,8 +313,6 @@ def cancel_job(db_path: str | Path, job_id: str) -> bool:
         _update_memo_status(conn, memo_id, "cancelled", now)
         conn.commit()
         return True
-    finally:
-        conn.close()
 
 
 def retry_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
@@ -350,8 +323,7 @@ def retry_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
     VAL-JOB-014: Preserves memo metadata.
     VAL-JOB-021: Retry after cancel re-queues from beginning.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         # Get the latest job for this memo
         latest_job = conn.execute(
             "SELECT status, attempt_count, hotwords, enable_diarization "
@@ -373,24 +345,19 @@ def retry_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
         enable_diarization = latest_job[0 + 3]
 
         new_attempt = attempt_count + 1
-    finally:
-        conn.close()
 
     new_job = create_job(
         db_path, memo_id, attempt_count=new_attempt, hotwords=hotwords, enable_diarization=enable_diarization
     )
 
     # Update memo status to queued
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         now = _now_iso()
         conn.execute(
             "UPDATE memos SET status = 'queued', updated_at = ? WHERE id = ?",
             (now, memo_id),
         )
         conn.commit()
-    finally:
-        conn.close()
 
     return new_job
 
@@ -409,8 +376,7 @@ def reprocess_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
     The caller is responsible for checking transcript_revision before calling
     this function (to prevent silent overwrite of user edits).
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         # Get the latest job for this memo
         latest_job = conn.execute(
             "SELECT status, attempt_count, hotwords, enable_diarization "
@@ -432,24 +398,19 @@ def reprocess_memo(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
         enable_diarization = latest_job[3]
 
         new_attempt = attempt_count + 1
-    finally:
-        conn.close()
 
     new_job = create_job(
         db_path, memo_id, attempt_count=new_attempt, hotwords=hotwords, enable_diarization=enable_diarization
     )
 
     # Update memo status to queued and reset transcript_revision
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         now = _now_iso()
         conn.execute(
             "UPDATE memos SET status = 'queued', transcript_revision = 0, updated_at = ? WHERE id = ?",
             (now, memo_id),
         )
         conn.commit()
-    finally:
-        conn.close()
 
     return new_job
 
@@ -462,11 +423,10 @@ def recover_stale_jobs(db_path: str | Path) -> int:
     """
     # States that indicate a job was interrupted mid-processing
     stale_states = {"preprocessing", "transcribing", "diarizing", "finalizing"}
-    conn = get_connection(db_path)
-    try:
-        placeholders = ",".join("?" for _ in stale_states)
+    with db_connection(db_path) as conn:
+        ph = in_placeholders(len(stale_states))
         stale_jobs = conn.execute(
-            f"SELECT id, memo_id FROM jobs WHERE status IN ({placeholders})",
+            f"SELECT id, memo_id FROM jobs WHERE status IN ({ph})",
             list(stale_states),
         ).fetchall()
 
@@ -496,8 +456,6 @@ def recover_stale_jobs(db_path: str | Path) -> int:
 
         conn.commit()
         return count
-    finally:
-        conn.close()
 
 
 def _update_memo_status(conn, memo_id: str, status: str, now: str) -> None:
@@ -505,6 +463,7 @@ def _update_memo_status(conn, memo_id: str, status: str, now: str) -> None:
 
     VAL-JOB-010/011/012: Memo status mirrors job status.
     """
+    # Column names are hardcoded constants, not user input
     updates = ["status = ?", "updated_at = ?"]
     params: list[Any] = [status, now]
 

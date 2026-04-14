@@ -23,7 +23,7 @@ def _check_storage() -> str:
         test_file.write_text("ok")
         test_file.unlink()
         return "ok"
-    except Exception:
+    except OSError:
         return "error"
 
 

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.db import get_connection
+from app.db import db_connection
 
 
 def _now_iso() -> str:
@@ -19,8 +19,7 @@ def get_speakers(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
 
     Returns None if the memo does not exist.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute("SELECT id FROM memos WHERE id = ?", (memo_id,)).fetchone()
         if memo is None:
             return None
@@ -41,8 +40,6 @@ def get_speakers(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
         ]
 
         return {"memo_id": memo_id, "speakers": speakers}
-    finally:
-        conn.close()
 
 
 def update_speakers(
@@ -60,8 +57,7 @@ def update_speakers(
     Returns:
         {"memo_id": ..., "speakers": [...]} or None if memo not found.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute("SELECT id FROM memos WHERE id = ?", (memo_id,)).fetchone()
         if memo is None:
             return None
@@ -92,8 +88,6 @@ def update_speakers(
         ]
 
         return {"memo_id": memo_id, "speakers": speakers}
-    finally:
-        conn.close()
 
 
 def create_diarization_job(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
@@ -102,8 +96,7 @@ def create_diarization_job(db_path: str | Path, memo_id: str) -> dict[str, Any] 
     Returns the new job dict, or None if memo not found.
     Raises ValueError if an active job already exists for this memo.
     """
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         memo = conn.execute("SELECT id FROM memos WHERE id = ?", (memo_id,)).fetchone()
         if memo is None:
             return None
@@ -143,5 +136,3 @@ def create_diarization_job(db_path: str | Path, memo_id: str) -> dict[str, Any] 
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()

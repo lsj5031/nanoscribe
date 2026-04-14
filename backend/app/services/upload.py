@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 from app.core.config import get_settings
-from app.db import get_connection
+from app.db import db_connection
 
 DATA_DIR = get_settings().data_dir
 
@@ -64,8 +64,7 @@ def create_memo_and_job(
     source_path.write_bytes(file_content)
 
     db_path = DATA_DIR / "nanoscribe.db"
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         # Insert memo
         conn.execute(
             """
@@ -89,8 +88,6 @@ def create_memo_and_job(
         )
 
         conn.commit()
-    finally:
-        conn.close()
 
     return {
         "memo": {

@@ -789,7 +789,7 @@ def persist_transcript(
       - transcript.final.json: Editor-ready segment data
       - segments table rows in SQLite
     """
-    from app.db import get_connection
+    from app.db import db_connection
 
     memo_dir = DATA_DIR / "memos" / memo_id
 
@@ -815,8 +815,7 @@ def persist_transcript(
     final_path.write_text(json.dumps(final_segments, ensure_ascii=False, indent=2))
 
     # Insert segments into SQLite
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute("DELETE FROM segments WHERE memo_id = ?", (memo_id,))
 
         now = _now_iso()
@@ -856,8 +855,6 @@ def persist_transcript(
         )
 
         conn.commit()
-    finally:
-        conn.close()
 
     logger.info("transcript_persisted", segment_count=len(segments), memo_id=memo_id)
 

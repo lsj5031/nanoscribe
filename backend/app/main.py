@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -49,9 +50,55 @@ def _resolve_path(base: str, path: str) -> str | None:
     return str(resolved)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+    """Application lifespan: startup (recover jobs, start worker, preload models)
+    and shutdown (stop worker).
+    """
+    # ── Startup ────────────────────────────────────────────────────
+    from app.services import jobs as job_service
+    from app.services.worker import get_worker, start_worker
+
+    db_path = DATA_DIR / "nanoscribe.db"
+    recovered = job_service.recover_stale_jobs(db_path)
+    if recovered > 0:
+        logger.info("recovered_stale_jobs", count=recovered)
+
+    await start_worker(db_path)
+
+    # Verify FunASR model disk cache in a background thread so the
+    # readiness status flips to "ready" without requiring the first
+    # transcription job to trigger the download.
+    async def _preload_models() -> None:
+        try:
+            from app.services.transcription import get_models
+
+            logger.info("preloading_models")
+            models = get_models()
+            await asyncio.to_thread(models.load)
+            logger.info("model_cache_verified")
+        except Exception:
+            logger.warning(
+                "model_cache_verification_failed",
+                error="models will download on first job",
+                exc_info=True,
+            )
+
+    preload_task = asyncio.create_task(_preload_models())
+
+    yield  # application is running
+
+    # ── Shutdown ───────────────────────────────────────────────────
+    preload_task.cancel()
+    worker = get_worker()
+    if worker:
+        worker.stop()
+    logger.info("shutdown_complete")
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="NanoScribe", version="0.1.0")
+    app = FastAPI(title="NanoScribe", version="0.1.0", lifespan=_lifespan)
 
     # Ensure data directory exists
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -66,39 +113,6 @@ def create_app() -> FastAPI:
     app.include_router(segments_router, prefix="/api")
     app.include_router(speakers_router, prefix="/api")
     app.include_router(export_router, prefix="/api")
-
-    # Startup: recover stale jobs, start worker, pre-load models
-    @app.on_event("startup")
-    async def _on_startup() -> None:
-        from app.services import jobs as job_service
-        from app.services.worker import start_worker
-
-        db_path = DATA_DIR / "nanoscribe.db"
-        recovered = job_service.recover_stale_jobs(db_path)
-        if recovered > 0:
-            logger.info("recovered_stale_jobs", count=recovered)
-
-        await start_worker(db_path)
-
-        # Verify FunASR model disk cache in a background thread so the
-        # readiness status flips to "ready" without requiring the first
-        # transcription job to trigger the download.
-        async def _preload_models() -> None:
-            try:
-                from app.services.transcription import get_models
-
-                logger.info("preloading_models")
-                models = get_models()
-                await asyncio.to_thread(models.load)
-                logger.info("model_cache_verified")
-            except Exception:
-                logger.warning(
-                    "model_cache_verification_failed",
-                    error="models will download on first job",
-                    exc_info=True,
-                )
-
-        asyncio.create_task(_preload_models())
 
     # Serve built SPA static files in production
     # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png

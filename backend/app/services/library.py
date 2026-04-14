@@ -17,6 +17,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app.db import db_connection, in_placeholders
+
 # Valid status values for filtering
 VALID_STATUSES = frozenset(
     {
@@ -53,30 +55,20 @@ def list_memos(
 
     Returns {"items": [...], "total": N, "page": P, "page_size": PS}.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    try:
+    with db_connection(db_path, row_factory=sqlite3.Row) as conn:
         # Build query parts
         conditions: list[str] = []
         params: list[Any] = []
-        joins: list[str] = []
 
         # FTS5 search (VAL-LIB-002)
         if q and q.strip():
             # Escape FTS5 special characters
             safe_q = _escape_fts_query(q.strip())
-            joins.append(
-                "JOIN memos_fts ON memos_fts.rowid IN "
-                "(SELECT memos.rowid FROM memos_fts WHERE memos_fts MATCH ? "
-                "UNION SELECT m.rowid FROM memos m JOIN segments s ON s.memo_id = m.id "
-                "JOIN memos_fts fts ON fts.rowid = s.rowid WHERE fts MATCH ?)"
-            )
             # Use a simpler approach: find memo IDs that match via FTS
             matching_ids = _find_matching_memo_ids(conn, safe_q)
             if matching_ids:
-                placeholders = ",".join("?" for _ in matching_ids)
-                conditions.append(f"memos.id IN ({placeholders})")
+                ph = in_placeholders(len(matching_ids))
+                conditions.append(f"memos.id IN ({ph})")
                 params.extend(matching_ids)
             else:
                 # No matches — return empty immediately
@@ -88,8 +80,8 @@ def list_memos(
             invalid = set(statuses) - VALID_STATUSES
             if invalid:
                 raise ValueError(f"Invalid status value(s): {', '.join(sorted(invalid))}")
-            placeholders = ",".join("?" for _ in statuses)
-            conditions.append(f"memos.status IN ({placeholders})")
+            ph = in_placeholders(len(statuses))
+            conditions.append(f"memos.status IN ({ph})")
             params.extend(statuses)
 
         # Language filter (VAL-LIB-006)
@@ -139,8 +131,6 @@ def list_memos(
             )
 
         return {"items": items, "total": total, "page": page, "page_size": page_size}
-    finally:
-        conn.close()
 
 
 def get_memo_detail(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
@@ -149,10 +139,7 @@ def get_memo_detail(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
     VAL-LIB-016: Returns complete metadata with job summary and exports.
     Returns None if memo not found.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    try:
+    with db_connection(db_path, row_factory=sqlite3.Row) as conn:
         row = conn.execute(
             "SELECT * FROM memos WHERE id = ?",
             (memo_id,),
@@ -181,8 +168,6 @@ def get_memo_detail(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
         }
 
         return memo
-    finally:
-        conn.close()
 
 
 def delete_memo(db_path: str | Path, data_dir: Path, memo_id: str) -> bool:
@@ -192,9 +177,7 @@ def delete_memo(db_path: str | Path, data_dir: Path, memo_id: str) -> bool:
     VAL-SEARCH-015: FTS5 index entries removed via CASCADE + triggers.
     Returns True if deleted, False if not found.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
+    with db_connection(db_path) as conn:
         # Check existence
         exists = conn.execute("SELECT 1 FROM memos WHERE id = ?", (memo_id,)).fetchone()
         if not exists:
@@ -212,8 +195,6 @@ def delete_memo(db_path: str | Path, data_dir: Path, memo_id: str) -> bool:
         # Now delete the memo (memo FTS trigger fires here)
         conn.execute("DELETE FROM memos WHERE id = ?", (memo_id,))
         conn.commit()
-    finally:
-        conn.close()
 
     # Remove filesystem artifacts
     memo_dir = data_dir / "memos" / memo_id
@@ -239,21 +220,25 @@ def _find_matching_memo_ids(conn: sqlite3.Connection, safe_q: str) -> list[str]:
 
     Returns a list of distinct memo IDs.
     """
-    # Search memo titles via FTS (memo rowids)
-    title_matches = conn.execute(
-        "SELECT m.id FROM memos m WHERE m.rowid IN (SELECT rowid FROM memos_fts WHERE memos_fts MATCH ?)",
-        (safe_q,),
-    ).fetchall()
+    try:
+        title_matches = conn.execute(
+            "SELECT m.id FROM memos m WHERE m.rowid IN (SELECT rowid FROM memos_fts WHERE memos_fts MATCH ?)",
+            (safe_q,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        title_matches = []
 
-    # Search segment text via FTS (segment rowids → memo_id lookup)
-    seg_matches = conn.execute(
-        "SELECT DISTINCT s.memo_id FROM segments s WHERE s.rowid IN "
-        "(SELECT rowid FROM memos_fts WHERE memos_fts MATCH ?)",
-        (safe_q,),
-    ).fetchall()
+    try:
+        seg_matches = conn.execute(
+            "SELECT DISTINCT s.memo_id FROM segments s WHERE s.rowid IN "
+            "(SELECT rowid FROM memos_fts WHERE memos_fts MATCH ?)",
+            (safe_q,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        seg_matches = []
 
     # Combine and deduplicate
-    ids = set()
+    ids: set[str] = set()
     for (memo_id,) in title_matches:
         ids.add(memo_id)
     for (memo_id,) in seg_matches:

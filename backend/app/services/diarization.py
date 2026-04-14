@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
 import structlog
+
+from app.db import db_connection
 
 logger = structlog.get_logger(__name__)
 
@@ -153,8 +154,7 @@ def create_speaker_rows(db_path: Path, memo_id: str, segments: list[dict[str, An
     if not speakers:
         return
 
-    conn = sqlite3.connect(str(db_path))
-    try:
+    with db_connection(db_path) as conn:
         for i, spk in enumerate(speakers):
             color = SPEAKER_COLORS[i % len(SPEAKER_COLORS)]
             display_name = f"Speaker {i + 1}"
@@ -170,5 +170,3 @@ def create_speaker_rows(db_path: Path, memo_id: str, segments: list[dict[str, An
             (len(speakers), memo_id),
         )
         conn.commit()
-    finally:
-        conn.close()

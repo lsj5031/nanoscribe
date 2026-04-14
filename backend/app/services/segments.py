@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app.db import db_connection, in_placeholders
+
 
 def _row_to_segment(row: sqlite3.Row) -> dict[str, Any]:
     """Convert a segments row to a dict."""
@@ -27,10 +29,7 @@ def get_segments(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
     Returns None if the memo does not exist.
     Returns {"memo_id": ..., "revision": N, "segments": [...]} otherwise.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    try:
+    with db_connection(db_path, row_factory=sqlite3.Row) as conn:
         # Check memo exists and get revision
         memo = conn.execute(
             "SELECT id, transcript_revision FROM memos WHERE id = ?",
@@ -52,8 +51,6 @@ def get_segments(db_path: str | Path, memo_id: str) -> dict[str, Any] | None:
             "revision": memo["transcript_revision"],
             "segments": segments,
         }
-    finally:
-        conn.close()
 
 
 class ConflictError(Exception):
@@ -86,10 +83,7 @@ def patch_segments(
         FileNotFoundError: If the memo does not exist.
         ConflictError: If base_revision doesn't match current revision.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    try:
+    with db_connection(db_path, row_factory=sqlite3.Row) as conn:
         memo = conn.execute(
             "SELECT id, transcript_revision FROM memos WHERE id = ?",
             (memo_id,),
@@ -118,7 +112,6 @@ def patch_segments(
             )
 
         new_revision = current_revision + 1
-        updated_segments: list[dict[str, Any]] = []
 
         for upd in updates:
             seg_id = upd["segment_id"]
@@ -140,10 +133,10 @@ def patch_segments(
 
         # Fetch updated segments
         seg_ids = [upd["segment_id"] for upd in updates]
-        placeholders = ",".join("?" for _ in seg_ids)
+        ph = in_placeholders(len(seg_ids))
         rows = conn.execute(
-            "SELECT id, ordinal, start_ms, end_ms, text, speaker_key, confidence, edited "
-            f"FROM segments WHERE id IN ({placeholders}) ORDER BY ordinal",
+            f"SELECT id, ordinal, start_ms, end_ms, text, speaker_key, confidence, edited "
+            f"FROM segments WHERE id IN ({ph}) ORDER BY ordinal",
             seg_ids,
         ).fetchall()
         updated_segments = [_row_to_segment(r) for r in rows]
@@ -153,5 +146,3 @@ def patch_segments(
             "revision": new_revision,
             "updated_segments": updated_segments,
         }
-    finally:
-        conn.close()
