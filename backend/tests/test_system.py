@@ -87,10 +87,17 @@ class TestHealthEndpoint:
         resp = client.get("/api/system/health")
         assert resp.json()["storage"] == "ok"
 
-    def test_model_ready_is_false_initially(self, client):
-        """Model reports not ready before ASR model loading."""
-        resp = client.get("/api/system/health")
-        assert resp.json()["model_ready"] is False
+    def test_model_ready_is_false_initially(self, client, tmp_path):
+        """Model reports not ready when no models are cached."""
+        import app.services.capabilities as cap_mod
+
+        original = cap_mod._get_modelscope_cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"
+        try:
+            resp = client.get("/api/system/health")
+            assert resp.json()["model_ready"] is False
+        finally:
+            cap_mod._get_modelscope_cache_dir = original
 
 
 class TestHealthDegradation:
@@ -346,11 +353,18 @@ class TestCapabilitiesRuntimeState:
         # Restore real module
         importlib.reload(cap_mod)
 
-    def test_ready_false_when_model_not_loaded(self, client):
-        """Ready is false when ASR model is not loaded."""
-        resp = client.get("/api/system/capabilities")
-        data = resp.json()
-        assert data["ready"] is False
+    def test_ready_false_when_model_not_loaded(self, client, tmp_path):
+        """Ready is false when model cache directories are empty."""
+        import app.services.capabilities as cap_mod
+
+        original = cap_mod._get_modelscope_cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"
+        try:
+            resp = client.get("/api/system/capabilities")
+            data = resp.json()
+            assert data["ready"] is False
+        finally:
+            cap_mod._get_modelscope_cache_dir = original
 
     def test_asr_model_is_nonempty_string(self, client):
         """ASR model identifier is a non-empty string."""
@@ -642,7 +656,7 @@ class TestReadinessEndpoint:
             cap_mod._get_modelscope_cache_dir = original
 
     def test_readiness_shows_cached_when_files_exist(self, client, tmp_path):
-        """Readiness reports loaded=False (not in memory) but downloading=False when files exist."""
+        """Readiness reports loaded=True (cached on disk) and downloading=False when files exist."""
         import app.services.capabilities as cap_mod
 
         cache_dir = tmp_path / "ms_cache"
@@ -657,10 +671,10 @@ class TestReadinessEndpoint:
         try:
             resp = client.get("/api/system/readiness")
             data = resp.json()
-            # Not loaded in memory, but cached (not downloading)
+            # loaded means cached on disk (not in-memory)
+            assert data["models"]["vad"]["loaded"] is True
+            # Not downloading because files already exist
             assert data["models"]["vad"]["downloading"] is False
-            # loaded is False because models aren't loaded in memory
-            assert data["models"]["vad"]["loaded"] is False
         finally:
             cap_mod._get_modelscope_cache_dir = original
 
