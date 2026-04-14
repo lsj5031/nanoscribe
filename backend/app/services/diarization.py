@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 # Pastel colors for visual differentiation of speakers
 SPEAKER_COLORS = [
@@ -28,6 +29,7 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
     Returns list of {"speaker": "spk0", "start_ms": 0, "end_ms": 5000}.
 
     Gracefully degrades if 3D-Speaker is not installed.
+    Uses GPU on-demand (same pattern as transcription) to avoid VRAM exhaustion.
     """
     try:
         # Ensure 3D-Speaker is importable
@@ -39,20 +41,56 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
             import speakerlab  # noqa: F401
         except ImportError:
             logger.warning(
-                "3D-Speaker not installed — skipping diarization. "
-                "Install via: git clone https://github.com/modelscope/3D-Speaker /opt/3D-Speaker"
+                "3d_speaker_not_installed",
+                hint="git clone https://github.com/modelscope/3D-Speaker /opt/3D-Speaker",
             )
             return []
 
     try:
         import torch
+        import torchaudio
+
+        # Monkey-patch torchaudio for pyannote.audio compatibility:
+        # pyannote.audio 3.x calls torchaudio.set_audio_backend() which was
+        # removed in torchaudio >= 2.0.  Provide a no-op stub so the import
+        # chain doesn't crash.
+        if not hasattr(torchaudio, "set_audio_backend"):
+            torchaudio.set_audio_backend = lambda _: None  # type: ignore[attr-defined]
+        if not hasattr(torchaudio, "get_audio_backend"):
+            torchaudio.get_audio_backend = lambda: None  # type: ignore[attr-defined]
+
+        # Monkey-patch torchaudio.load to use soundfile instead of torchcodec.
+        # torchcodec requires libnvrtc.so.13 which is unavailable with
+        # CUDA 12.x.  soundfile (libsndfile) works reliably for WAV/FLAC/OGG.
+
+        def _soundfile_load(filepath: str | Path, **kwargs):  # type: ignore[no-untyped-def]
+            import soundfile
+
+            waveform, sample_rate = soundfile.read(str(filepath), dtype="float32", always_2d=True)
+            return torch.from_numpy(waveform.T), sample_rate
+
+        # Only patch if the default backend (torchcodec) is broken
+        try:
+            torchaudio.load("/dev/null")  # quick probe
+        except Exception:
+            torchaudio.load = _soundfile_load  # type: ignore[assignment]
+            logger.debug("torchaudio_load_patched_soundfile")
+
         from speakerlab.bin.infer_diarization import Diarization3Dspeaker
 
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        diarization = Diarization3Dspeaker(device=device)
 
-        # Diarization3Dspeaker.__call__ returns [[start_s, end_s, speaker_id], ...]
-        raw_result = diarization(str(audio_path))
+        # Create diarization model directly on the inference device.
+        # Like the ASR pipeline, models are ephemeral — created for inference
+        # then deleted so VRAM is freed for the next step.
+        diarization = Diarization3Dspeaker(device=device)
+        try:
+            # Diarization3Dspeaker.__call__ returns [[start_s, end_s, speaker_id], ...]
+            raw_result = diarization(str(audio_path))
+        finally:
+            del diarization
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
         segments: list[dict[str, Any]] = []
         for seg in raw_result:
@@ -66,7 +104,7 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
             )
         return segments
     except Exception:
-        logger.exception("Diarization failed")
+        logger.exception("diarization_failed")
         return []
 
 

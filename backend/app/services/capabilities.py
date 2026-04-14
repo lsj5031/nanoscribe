@@ -5,11 +5,12 @@ VAL-SYS-002: Capability manifest reflects actual runtime state.
 
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 def _detect_gpu() -> tuple[bool, str]:
@@ -27,18 +28,28 @@ def _detect_gpu() -> tuple[bool, str]:
             return True, f"cuda:{name}"
         return False, "cpu"
     except ImportError:
-        logger.debug("PyTorch not installed, defaulting to CPU")
+        logger.debug("pytorch_not_installed", device="cpu")
         return False, "cpu"
     except Exception as exc:
-        logger.warning("GPU detection failed: %s", exc)
+        logger.warning("gpu_detection_failed", error=str(exc))
         return False, "cpu"
 
 
 def _detect_model_ready() -> bool:
-    """Check whether the ASR model is loaded and the pipeline can accept jobs."""
-    from app.services.transcription import is_model_ready
+    """Check whether the core pipeline models are cached on disk.
 
-    return is_model_ready()
+    Models are loaded ephemerally onto the GPU during inference (not kept
+    in memory), so "ready" means the disk cache exists, not that models
+    are resident in RAM/VRAM.
+    """
+    # Check that all core models (ASR, VAD, Punc) are cached on disk
+    _OPTIONAL = {"diarization"}
+    for key, (org, model_name) in _MODEL_CACHE_INFO.items():
+        if key in _OPTIONAL:
+            continue
+        if not _check_model_cached(org, model_name):
+            return False
+    return True
 
 
 def get_capabilities() -> dict:
@@ -67,7 +78,7 @@ def get_capabilities() -> dict:
 _MODEL_CACHE_INFO: dict[str, tuple[str, str]] = {
     "asr": ("FunAudioLLM", "Fun-ASR-Nano-2512"),
     "vad": ("iic", "speech_fsmn_vad_zh-cn-16k-common-pytorch"),
-    "punc": ("iic", "punc_ct-transformer_zh-cn-common-vocab272727-pytorch"),
+    "punc": ("iic", "punc_ct-transformer_cn-en-common-vocab471067-large"),
     "diarization": ("iic", "3dspeaker_speech_campplus_sv_zh-cn_16k-common"),
 }
 
@@ -104,13 +115,12 @@ def get_readiness() -> dict:
     """
     gpu, device = _detect_gpu()
 
-    # Check in-memory loading first
-    from app.services.transcription import is_model_ready
-
-    models_loaded = is_model_ready()
-
     models_info: dict[str, dict] = {}
     all_ready = True
+
+    # Diarization is optional — only core pipeline models (ASR, VAD, Punc)
+    # gate the overall readiness flag.
+    _OPTIONAL_MODELS = {"diarization"}
 
     for key, (org, model_name) in _MODEL_CACHE_INFO.items():
         display_name = model_name
@@ -125,17 +135,15 @@ def get_readiness() -> dict:
             display_name = "CAM++"
 
         cached = _check_model_cached(org, model_name)
-
-        # If models are loaded in memory, all cached models are ready
-        loaded = models_loaded and cached
         downloading = not cached and _model_dir_exists(org, model_name)
 
-        if not loaded:
+        # Only core (non-optional) models gate overall readiness
+        if not cached and key not in _OPTIONAL_MODELS:
             all_ready = False
 
         models_info[key] = {
             "name": display_name,
-            "loaded": loaded,
+            "loaded": cached,
             "downloading": downloading,
         }
 

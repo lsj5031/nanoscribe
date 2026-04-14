@@ -21,7 +21,8 @@ services:
       - HF_HUB_OFFLINE=0
       - MODELSCOPE_CACHE=/app/data/.modelscope_cache
       - NANOSCRIBE_DATA_DIR=/app/data
-      - NANOSCRIBE_STATIC_DIR=/app/static
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - NANOSCRIBE_STATIC_DIR=/app/frontend/build
     deploy:
       resources:
         reservations:

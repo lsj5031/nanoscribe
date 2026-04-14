@@ -1,3 +1,38 @@
+# ── Data & persistence ──────────────────────────
 data/*
 !data/.gitkeep
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-bak
+data/*.sqlite
+
+# ── Python ──────────────────────────────────────
 __pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# ── Frontend ───────────────────────────────────
+frontend/node_modules/
+frontend/.pnpm-store/
+frontend/.svelte-kit/
+frontend/build/
+frontend/.vite/
+
+# ── Environment & secrets ──────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Model caches (mounted, not repo content) ──
+.modelscope_cache/
+
+# ── OS/editor junk ─────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import logging
+import asyncio
 
+import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse, HTMLResponse
@@ -17,8 +18,12 @@ from app.api.segments import router as segments_router
 from app.api.speakers import router as speakers_router
 from app.api.system import router as system_router
 from app.core.config import get_settings
+from app.core.logging import setup_logging
 
-logger = logging.getLogger(__name__)
+# Initialise structured logging before anything else
+setup_logging()
+
+logger = structlog.get_logger(__name__)
 
 _settings = get_settings()
 DATA_DIR = _settings.data_dir
@@ -62,7 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(speakers_router, prefix="/api")
     app.include_router(export_router, prefix="/api")
 
-    # Startup: recover stale jobs and start worker
+    # Startup: recover stale jobs, start worker, pre-load models
     @app.on_event("startup")
     async def _on_startup() -> None:
         from app.services import jobs as job_service
@@ -71,9 +76,29 @@ def create_app() -> FastAPI:
         db_path = DATA_DIR / "nanoscribe.db"
         recovered = job_service.recover_stale_jobs(db_path)
         if recovered > 0:
-            logger.info("Recovered %d stale jobs on startup", recovered)
+            logger.info("recovered_stale_jobs", count=recovered)
 
         await start_worker(db_path)
+
+        # Verify FunASR model disk cache in a background thread so the
+        # readiness status flips to "ready" without requiring the first
+        # transcription job to trigger the download.
+        async def _preload_models() -> None:
+            try:
+                from app.services.transcription import get_models
+
+                logger.info("preloading_models")
+                models = get_models()
+                await asyncio.to_thread(models.load)
+                logger.info("model_cache_verified")
+            except Exception:
+                logger.warning(
+                    "model_cache_verification_failed",
+                    error="models will download on first job",
+                    exc_info=True,
+                )
+
+        asyncio.create_task(_preload_models())
 
     # Serve built SPA static files in production
     # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png

@@ -6,11 +6,12 @@ VAL-TRANS-003: SSE reconnect delivers current state without replay.
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any, Callable, Coroutine
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 # SSE event types matching SPEC §15.5
 EVENT_STAGE = "job.stage"
@@ -64,7 +65,7 @@ class SSEEventManager:
                     # No running loop — create one
                     asyncio.run(cb(event))
             except Exception as exc:
-                logger.warning("SSE subscriber error for job %s: %s", job_id, exc)
+                logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
 
     def publish_progress(self, job_id: str, progress: float, stage: str | None = None) -> None:
         """Publish a progress event, throttled to ~1/second.

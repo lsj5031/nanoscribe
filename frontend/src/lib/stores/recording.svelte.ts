@@ -28,6 +28,7 @@ let state = $state<RecordingState>({
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let timerStart = 0;
 let timerAccumulated = 0;
+let recordingChunks: Blob[] = []; // shared between startRecording() and stopRecording()
 
 export function getIsRecording(): boolean {
   return state.isRecording;
@@ -142,17 +143,17 @@ export function startRecording(): void {
 
   try {
     const recorder = new MediaRecorder(state.mediaStream, options);
-    const chunks: Blob[] = [];
+    recordingChunks = []; // reset for new recording
 
     recorder.ondataavailable = (e: BlobEvent) => {
       if (e.data.size > 0) {
-        chunks.push(e.data);
+        recordingChunks.push(e.data);
       }
     };
 
     recorder.onstop = () => {
       const blobType = mimeType || 'audio/webm';
-      state.audioBlob = new Blob(chunks, { type: blobType });
+      state.audioBlob = new Blob(recordingChunks, { type: blobType });
     };
 
     recorder.onerror = () => {
@@ -209,25 +210,13 @@ export function stopRecording(): Promise<void> {
     const recorder = state.mediaRecorder;
 
     if (recorder.state === 'recording' || recorder.state === 'paused') {
-      recorder.onstop = () => {
-        const chunks: Blob[] = [];
-        // The ondataavailable already fires during recording; onstop triggers a final flush
-        // We need to handle the blob creation after all data is collected
-        resolve();
-      };
-
-      // Replace the onstop handler with one that also creates the blob
       const mimeType = getSupportedMimeType() || 'audio/webm';
-      const chunks: Blob[] = [];
 
-      recorder.ondataavailable = (e: BlobEvent) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
+      // The ondataavailable handler from startRecording already accumulates
+      // chunks into recordingChunks.  recorder.stop() triggers a final flush,
+      // then onstop fires — at that point recordingChunks has all the data.
       recorder.onstop = () => {
-        state.audioBlob = new Blob(chunks, { type: mimeType });
+        state.audioBlob = new Blob(recordingChunks, { type: mimeType });
         stopTimer();
         state.isRecording = false;
         state.isPaused = false;

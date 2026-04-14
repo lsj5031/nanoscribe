@@ -24,14 +24,17 @@ Pipeline:
 from __future__ import annotations
 
 import json
-import logging
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from app.core.config import get_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _settings = get_settings()
 DATA_DIR = _settings.data_dir
@@ -43,6 +46,12 @@ PUNC_MODEL = _settings.punc_model
 
 # Sentence-ending punctuation for segment splitting
 _SENTENCE_END = frozenset("。！？.!?;")
+
+# VAD-chunked ASR parameters
+_MERGE_GAP_MS = 800  # merge VAD segments closer than this
+_MAX_CHUNK_MS = 30_000  # never merge beyond 30 s (fits easily in 8 GiB VRAM)
+_CHUNK_BUFFER_MS = 200  # pad each chunk by this much to avoid clipping
+_MIN_CHUNK_MS = 400  # skip chunks shorter than this (ASR unreliable)
 
 
 def _get_remote_code_path() -> str | None:
@@ -57,12 +66,12 @@ def _get_remote_code_path() -> str | None:
         model_py = Path(funasr.models.fun_asr_nano.__file__).parent / "model.py"
         if model_py.exists():
             path = str(model_py)
-            logger.info("FunASR Nano remote_code path: %s", path)
+            logger.info("remote_code_path_found", path=path)
             return path
-        logger.warning("FunASR Nano model.py not found at %s", model_py)
+        logger.warning("remote_code_path_missing", searched=str(model_py))
         return None
     except (ImportError, AttributeError):
-        logger.warning("Could not locate FunASR Nano model.py")
+        logger.warning("remote_code_path_not_locatable")
         return None
 
 
@@ -73,17 +82,27 @@ class TranscriptionError(Exception):
 
 
 class TranscriptionModels:
-    """Lazy-loaded FunASR model container.
+    """FunASR model manager with ephemeral GPU inference.
 
-    Models are loaded on first use and cached for the process lifetime.
-    Thread-safety: designed for single-worker sequential GPU processing.
+    Models are *not* kept in GPU memory between inference steps — they are
+    too large to coexist on an 8 GiB RTX 3070 (VAD+ASR+Punc ≈ 7.5 GiB).
+    Instead, each ``run_*`` method creates a fresh AutoModel on the GPU,
+    runs inference, then deletes it and clears VRAM before the next step.
+
+    This adds ~2-5 s overhead per step (loading from disk cache) but
+    guarantees that only one model occupies VRAM at a time, leaving room
+    for inference tensors.
+
+    Thread-safety: ``_infer_lock`` serialises GPU inference so that two
+    concurrent transcription jobs don't compete for VRAM.
     """
 
     def __init__(self) -> None:
-        self._asr_model: Any = None
-        self._vad_model: Any = None
-        self._punc_model: Any = None
         self._device: str = "cpu"
+        self._remote_code: str | None = None
+        self._loaded: bool = False  # True once disk cache is verified
+        self._load_lock = threading.Lock()
+        self._infer_lock = threading.Lock()  # serialises GPU inference steps
 
     def _detect_device(self) -> str:
         """Detect best available device (cuda if available, else cpu)."""
@@ -97,130 +116,338 @@ class TranscriptionModels:
         return "cpu"
 
     def load(self) -> None:
-        """Load all models (VAD, ASR, Punc) if not already loaded."""
-        if self._asr_model is not None:
-            return
+        """Verify that models are available and detect the inference device.
 
-        try:
-            from funasr import AutoModel
-        except ImportError as e:
-            raise TranscriptionError("FunASR is not installed") from e
+        Checks that each model directory exists in the ModelScope disk cache.
+        If a model isn't cached yet, creating the AutoModel during inference
+        will trigger the download automatically — so this method is a fast
+        best-effort check, not a blocking download.
 
-        self._device = self._detect_device()
-        logger.info("Loading FunASR models on device=%s ...", self._device)
+        Thread-safe: uses a lock to prevent concurrent double-loading
+        when the startup preload and a first transcription job race.
+        """
+        with self._load_lock:
+            if self._loaded:
+                return
 
-        remote_code = _get_remote_code_path()
+            try:
+                from funasr import AutoModel  # noqa: F401
+            except ImportError as e:
+                raise TranscriptionError("FunASR is not installed") from e
 
-        # Load VAD model (standalone)
-        logger.info("Loading VAD model: %s", VAD_MODEL)
-        self._vad_model = AutoModel(
+            self._device = self._detect_device()
+            self._remote_code = _get_remote_code_path()
+
+            logger.info(
+                "checking_model_cache",
+                device=self._device,
+            )
+
+            # Quick disk-cache check for each model.  Missing models will
+            # be downloaded on first inference — no need to block here.
+            missing = []
+            for label, model_id in [
+                ("VAD", VAD_MODEL),
+                ("ASR", ASR_MODEL),
+                ("Punc", PUNC_MODEL),
+            ]:
+                cache_dir = self._model_cache_dir(model_id)
+                if cache_dir and not cache_dir.is_dir():
+                    missing.append(f"{label} ({model_id})")
+                else:
+                    logger.info("model_cached", model=label)
+
+            if missing:
+                logger.warning(
+                    "models_not_cached",
+                    missing=missing,
+                )
+
+            self._loaded = True
+            logger.info("pipeline_ready", device=self._device)
+
+    @property
+    def is_loaded(self) -> bool:
+        """Check if models are verified as cached on disk."""
+        return self._loaded
+
+    @property
+    def device(self) -> str:
+        """Return the target inference device."""
+        return self._device
+
+    @staticmethod
+    def _model_cache_dir(model_id: str) -> Path | None:
+        """Return the ModelScope cache directory for *model_id*, or None."""
+        import os
+
+        cache_root = os.environ.get("MODELSCOPE_CACHE")
+        if not cache_root:
+            cache_root = str(Path.home() / ".cache" / "modelscope")
+        # Model IDs like "iic/speech_fsmn_vad" or "FunAudioLLM/Fun-ASR-Nano-2512"
+        # are stored under <cache>/models/<org>/<model_name>/
+        if "/" in model_id:
+            org, name = model_id.split("/", 1)
+        else:
+            # Short aliases like "fsmn-vad" — can't resolve cache path
+            return None
+        return Path(cache_root) / "models" / org / name
+
+    def _clear_vram(self) -> None:
+        """Release cached CUDA memory back to the allocator."""
+        if self._device.startswith("cuda"):
+            try:
+                import torch
+
+                torch.cuda.empty_cache()
+            except ImportError:
+                pass
+
+    # -- Ephemeral model factories -------------------------------------------------
+
+    def _create_vad_model(self) -> Any:
+        """Create an ephemeral VAD model on the inference device."""
+        from funasr import AutoModel
+
+        return AutoModel(
             model=VAD_MODEL,
             disable_update=True,
             model_hub="modelscope",
             device=self._device,
         )
 
-        # Load ASR model WITHOUT built-in VAD/Punc (we run those separately)
-        # This avoids the inference_with_vad batch decoding bug in Fun-ASR-Nano
-        asr_kwargs: dict[str, Any] = {
+    def _create_asr_model(self) -> Any:
+        """Create an ephemeral ASR model on the inference device."""
+        from funasr import AutoModel
+
+        kwargs: dict[str, Any] = {
             "model": ASR_MODEL,
             "disable_update": True,
             "model_hub": "modelscope",
             "trust_remote_code": True,
             "device": self._device,
         }
-        if remote_code:
-            asr_kwargs["remote_code"] = remote_code
+        if self._remote_code:
+            kwargs["remote_code"] = self._remote_code
+        return AutoModel(**kwargs)
 
-        logger.info("Loading ASR model: %s", ASR_MODEL)
-        self._asr_model = AutoModel(**asr_kwargs)
+    def _create_punc_model(self) -> Any:
+        """Create an ephemeral Punc model on the inference device."""
+        from funasr import AutoModel
 
-        # Load Punc model (standalone)
-        logger.info("Loading Punc model: %s", PUNC_MODEL)
-        self._punc_model = AutoModel(
+        return AutoModel(
             model=PUNC_MODEL,
             disable_update=True,
             model_hub="modelscope",
             device=self._device,
         )
 
-        logger.info("FunASR models loaded successfully")
-
-    @property
-    def is_loaded(self) -> bool:
-        """Check if models are loaded."""
-        return self._asr_model is not None
-
-    @property
-    def device(self) -> str:
-        """Return the device being used."""
-        return self._device
+    # -- Inference methods ---------------------------------------------------------
 
     def run_vad(self, audio_path: str | Path) -> list[list[int]]:
         """Run VAD on an audio file and return speech segments.
 
+        Creates a VAD model on GPU, runs inference, then deletes it.
+
         Returns:
             List of [start_ms, end_ms] pairs for each speech segment.
         """
-        if self._vad_model is None:
-            raise TranscriptionError("Models not loaded")
+        if not self._loaded:
+            raise TranscriptionError("Models not loaded — call load() first")
 
-        try:
-            result = self._vad_model.generate(input=str(audio_path))
-            if not result or not result[0].get("value"):
-                return []
-            return result[0]["value"]
-        except Exception as exc:
-            raise TranscriptionError(f"VAD processing failed: {exc}") from exc
+        logger.info("vad_start", audio=str(audio_path), device=self._device)
+        t0 = time.monotonic()
 
-    def run_asr(self, audio_path: str | Path, hotwords: str | None = None) -> list[dict[str, Any]]:
-        """Run ASR (without VAD) on an audio file.
+        with self._infer_lock:
+            model = self._create_vad_model()
+            try:
+                result = model.generate(input=str(audio_path))
+                if not result or not result[0].get("value"):
+                    logger.info("vad_done", segments=0, elapsed_s=round(time.monotonic() - t0, 2))
+                    return []
+                segments = result[0]["value"]
+                logger.info(
+                    "vad_done",
+                    segments=len(segments),
+                    total_speech_ms=sum(e - s for s, e in segments),
+                    elapsed_s=round(time.monotonic() - t0, 2),
+                )
+                return segments
+            except Exception as exc:
+                logger.error("vad_failed", error=str(exc))
+                raise TranscriptionError(f"VAD processing failed: {exc}") from exc
+            finally:
+                del model
+                self._clear_vram()
+
+    def run_asr_chunked(
+        self,
+        audio_path: str | Path,
+        vad_segments: list[list[int]],
+        hotwords: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run ASR on VAD-chunked audio to avoid GPU OOM on long files.
+
+        Instead of feeding the entire audio to ASR at once (which OOMs on
+        long files for GPUs with limited VRAM), this method:
+          1. Merges adjacent VAD segments that are close together
+          2. Extracts each chunk as a temporary WAV file
+          3. Creates the ASR model **once** and processes all chunks
+          4. Adjusts timestamps to be relative to the full audio
+          5. Combines all results, then deletes the ASR model
+
+        The ASR model is kept in VRAM for the entire chunk-processing
+        phase (VAD is already done and deleted, so VRAM is free) and
+        only deleted after all chunks are processed.
 
         Returns:
-            List of result dicts from FunASR with 'text', 'timestamps', etc.
+            List of result dicts with globally-adjusted timestamps.
         """
-        if self._asr_model is None:
-            raise TranscriptionError("Models not loaded")
+        if not vad_segments:
+            return []
 
-        try:
-            generate_kwargs: dict[str, Any] = {
-                "input": str(audio_path),
-                "disable_pbar": True,
-            }
-            if hotwords:
-                generate_kwargs["hotword"] = hotwords
+        merged = _merge_vad_segments(vad_segments)
+        logger.info(
+            "chunked_asr_start",
+            raw_segments=len(vad_segments),
+            merged_segments=len(merged),
+            device=self._device,
+        )
 
-            result = self._asr_model.generate(**generate_kwargs)
-            return result
-        except NotImplementedError as exc:
-            raise TranscriptionError(f"ASR processing failed (model limitation): {exc}") from exc
-        except Exception as exc:
-            raise TranscriptionError(f"ASR processing failed: {exc}") from exc
+        all_results: list[dict[str, Any]] = []
+        t_chunk_total = time.monotonic()
+
+        with self._infer_lock:
+            t_model_load = time.monotonic()
+            model = self._create_asr_model()
+            logger.info("asr_model_loaded", load_s=round(time.monotonic() - t_model_load, 2))
+            try:
+                for i, (start_ms, end_ms) in enumerate(merged):
+                    # Extract chunk as temporary WAV (with padding)
+                    t_chunk_start = time.monotonic()
+                    chunk_info = _extract_chunk(audio_path, start_ms, end_ms)
+                    if chunk_info is None:
+                        logger.warning(
+                            "chunk_skipped_too_short",
+                            chunk_index=i,
+                            start_ms=start_ms,
+                            end_ms=end_ms,
+                        )
+                        continue
+                    chunk_path, padded_start = chunk_info
+                    logger.debug(
+                        "chunk_extracted",
+                        chunk_index=i,
+                        start_ms=start_ms,
+                        end_ms=end_ms,
+                        padded_start_ms=padded_start,
+                        chunk_path=str(chunk_path),
+                    )
+
+                    try:
+                        generate_kwargs: dict[str, Any] = {
+                            "input": str(chunk_path),
+                            "disable_pbar": True,
+                        }
+                        if hotwords:
+                            generate_kwargs["hotword"] = hotwords
+
+                        chunk_result = model.generate(**generate_kwargs)
+                    except Exception as exc:
+                        logger.warning(
+                            "chunk_asr_failed",
+                            chunk_index=i,
+                            start_ms=start_ms,
+                            end_ms=end_ms,
+                            error=str(exc),
+                        )
+                        continue
+                    finally:
+                        # Clean up temp file
+                        try:
+                            chunk_path.unlink()
+                        except OSError:
+                            pass
+
+                    if not chunk_result:
+                        continue
+
+                    # Adjust timestamps to be relative to the full audio.
+                    # Use padded_start (not start_ms) because time 0 in
+                    # the extracted chunk WAV corresponds to padded_start
+                    # in the original audio.
+                    result = chunk_result[0]
+                    offset_s = padded_start / 1000.0
+                    timestamps = result.get("timestamps", [])
+                    for ts in timestamps:
+                        ts["start_time"] = round(ts.get("start_time", 0) + offset_s, 3)
+                        ts["end_time"] = round(ts.get("end_time", 0) + offset_s, 3)
+
+                    all_results.append(result)
+
+                    chunk_text = result.get("text", "")
+                    n_tokens = len(timestamps)
+                    logger.info(
+                        "chunk_done",
+                        chunk_index=i + 1,
+                        total_chunks=len(merged),
+                        start_ms=start_ms,
+                        end_ms=end_ms,
+                        tokens=n_tokens,
+                        text_preview=chunk_text[:60] if chunk_text else "",
+                        elapsed_s=round(time.monotonic() - t_chunk_start, 2),
+                    )
+            finally:
+                del model
+                self._clear_vram()
+
+        total_elapsed = time.monotonic() - t_chunk_total
+        logger.info(
+            "chunked_asr_done",
+            chunks_processed=len(all_results),
+            total_tokens=sum(len(r.get("timestamps", [])) for r in all_results),
+            elapsed_s=round(total_elapsed, 2),
+        )
+
+        return all_results
 
     def run_punc(self, text: str) -> str:
         """Run punctuation restoration on text.
 
+        Creates a Punc model on GPU, runs inference, then deletes it.
+
         Returns:
             Text with restored punctuation.
         """
-        if self._punc_model is None:
-            raise TranscriptionError("Models not loaded")
+        if not self._loaded:
+            raise TranscriptionError("Models not loaded — call load() first")
 
-        try:
-            result = self._punc_model.generate(input=text)
-            if result and result[0].get("text"):
-                return result[0]["text"]
-            return text
-        except Exception as exc:
-            logger.warning("Punc restoration failed, using raw text: %s", exc)
-            return text
+        logger.info("punc_start", text_length=len(text))
+        t0 = time.monotonic()
+
+        with self._infer_lock:
+            model = self._create_punc_model()
+            try:
+                result = model.generate(input=text)
+                if result and result[0].get("text"):
+                    punc_text = result[0]["text"]
+                    logger.info("punc_done", elapsed_s=round(time.monotonic() - t0, 2))
+                    return punc_text
+                logger.info("punc_done", result="unchanged", elapsed_s=round(time.monotonic() - t0, 2))
+                return text
+            except Exception as exc:
+                logger.warning("punc_failed", error=str(exc))
+                return text
+            finally:
+                del model
+                self._clear_vram()
 
     def transcribe(
         self,
         audio_path: str | Path,
         hotwords: str | None = None,
     ) -> dict[str, Any]:
-        """Full transcription pipeline: VAD → ASR → Punc.
+        """Full transcription pipeline: VAD → chunked ASR → Punc.
 
         Returns a dict with:
           - raw_output: The raw FunASR ASR result list
@@ -229,49 +456,186 @@ class TranscriptionModels:
         """
         self.load()
 
+        logger.info("transcribe_start", audio=str(audio_path), hotwords=hotwords)
+        t0 = time.monotonic()
+
         # Step 1: Run VAD to get speech segments
         vad_segments = self.run_vad(audio_path)
-        logger.info("VAD produced %d speech segments", len(vad_segments))
 
         if not vad_segments:
+            logger.info("transcribe_done", result="no_speech", elapsed_s=round(time.monotonic() - t0, 2))
             return {"raw_output": [], "text": "", "segments": []}
 
-        # Step 2: Run ASR on full audio (produces text with token-level timestamps)
-        raw_output = self.run_asr(audio_path, hotwords=hotwords)
+        # Step 2: Run ASR on VAD-chunked audio (avoids GPU OOM on long files)
+        chunk_results = self.run_asr_chunked(audio_path, vad_segments, hotwords=hotwords)
 
-        if not raw_output:
+        if not chunk_results:
+            logger.info("transcribe_done", result="no_asr_output", elapsed_s=round(time.monotonic() - t0, 2))
             return {"raw_output": [], "text": "", "segments": []}
 
-        result = raw_output[0]
-        raw_text = result.get("text_tn", result.get("text", "")).strip()
-        punct_text = result.get("text", "").strip()
+        # Combine text and timestamps from all chunks
+        all_timestamps: list[dict[str, Any]] = []
+        all_raw_text: list[str] = []
+        all_punct_text: list[str] = []
 
-        # Step 3: Get token-level timestamps for segment building
-        timestamps = result.get("timestamps", [])
+        for result in chunk_results:
+            raw_text = result.get("text_tn", result.get("text", "")).strip()
+            punct_text = result.get("text", "").strip()
+            if raw_text:
+                all_raw_text.append(raw_text)
+            if punct_text:
+                all_punct_text.append(punct_text)
+            timestamps = result.get("timestamps", [])
+            if timestamps:
+                all_timestamps.extend(timestamps)
 
-        # Step 4: Build segments from timestamps
-        if timestamps:
-            segments = _build_segments_from_timestamps(timestamps)
+        # Step 3: Run punctuation restoration on combined raw text
+        combined_raw = " ".join(all_raw_text)
+        combined_punct = " ".join(all_punct_text)
+
+        if combined_raw:
+            combined_punct = self.run_punc(combined_raw)
+
+        # Step 4: Build segments from globally-adjusted timestamps
+        if all_timestamps:
+            segments = _build_segments_from_timestamps(all_timestamps)
+            logger.info("segments_built", method="timestamps", count=len(segments))
         elif vad_segments:
-            # Fallback: use VAD timing if no token timestamps
-            segments = _build_segments_from_vad(vad_segments, punct_text or raw_text)
+            segments = _build_segments_from_vad(vad_segments, combined_punct or combined_raw)
+            logger.info("segments_built", method="vad_fallback", count=len(segments))
         else:
             segments = [
                 {
                     "start_ms": 0,
                     "end_ms": 0,
-                    "text": punct_text or raw_text,
+                    "text": combined_punct or combined_raw,
                     "confidence": 1.0,
                 }
             ]
+            logger.info("segments_built", method="fallback", count=1)
 
         combined_text = " ".join(str(seg["text"]) for seg in segments if str(seg["text"]).strip())
 
+        logger.info(
+            "transcribe_done",
+            segment_count=len(segments),
+            text_length=len(combined_text),
+            elapsed_s=round(time.monotonic() - t0, 2),
+        )
+
         return {
-            "raw_output": raw_output,
+            "raw_output": chunk_results,
             "text": combined_text,
             "segments": segments,
         }
+
+
+def _merge_vad_segments(
+    vad_segments: list[list[int]],
+    gap_threshold_ms: int = _MERGE_GAP_MS,
+    max_duration_ms: int = _MAX_CHUNK_MS,
+) -> list[list[int]]:
+    """Merge adjacent VAD segments that are close together.
+
+    Merges segments whose gap is ≤ *gap_threshold_ms* unless the
+    resulting chunk would exceed *max_duration_ms*.  This reduces
+    the number of ASR calls while keeping each chunk small enough
+    to avoid GPU OOM.
+    """
+    if not vad_segments:
+        return []
+
+    merged: list[list[int]] = [list(vad_segments[0])]
+
+    for start, end in vad_segments[1:]:
+        prev = merged[-1]
+        gap = start - prev[1]
+        duration_if_merged = end - prev[0]
+
+        if gap <= gap_threshold_ms and duration_if_merged <= max_duration_ms:
+            prev[1] = end  # merge
+        else:
+            merged.append([start, end])
+
+    return merged
+
+
+def _extract_chunk(
+    audio_path: str | Path,
+    start_ms: int,
+    end_ms: int,
+) -> tuple[Path, int] | None:
+    """Extract a chunk of audio as a temporary WAV file using ffmpeg.
+
+    Pads the chunk by _CHUNK_BUFFER_MS on each side to avoid clipping
+    words at segment boundaries.  Returns ``(chunk_path, padded_start_ms)``
+    or None if the chunk is too short.
+
+    The caller must use *padded_start_ms* (not *start_ms*) as the offset
+    when adjusting timestamps, because time 0 in the extracted WAV
+    corresponds to *padded_start_ms* in the full audio.
+    """
+    import subprocess
+    import tempfile
+
+    audio_path = Path(audio_path)
+
+    # Apply buffer padding
+    padded_start = max(0, start_ms - _CHUNK_BUFFER_MS)
+    padded_end = end_ms + _CHUNK_BUFFER_MS
+    chunk_duration_ms = padded_end - padded_start
+
+    if chunk_duration_ms < _MIN_CHUNK_MS:
+        return None
+
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".wav",
+        prefix=f"chunk_{padded_start}_",
+        delete=False,
+    )
+    tmp.close()
+    chunk_path = Path(tmp.name)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{padded_start}ms",
+        "-i",
+        str(audio_path),
+        "-t",
+        f"{chunk_duration_ms}ms",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-sample_fmt",
+        "s16",
+        str(chunk_path),
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        try:
+            chunk_path.unlink()
+        except OSError:
+            pass
+        return None
+
+    if result.returncode != 0 or not chunk_path.exists() or chunk_path.stat().st_size == 0:
+        try:
+            chunk_path.unlink()
+        except OSError:
+            pass
+        return None
+
+    return chunk_path, padded_start
 
 
 def _build_segments_from_timestamps(
@@ -487,7 +851,7 @@ def persist_transcript(
     finally:
         conn.close()
 
-    logger.info("Persisted %d segments for memo %s", len(segments), memo_id)
+    logger.info("transcript_persisted", segment_count=len(segments), memo_id=memo_id)
 
 
 def _now_iso() -> str:

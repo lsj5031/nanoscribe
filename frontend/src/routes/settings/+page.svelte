@@ -178,10 +178,13 @@
           </div>
           <div class="flex items-start justify-between">
             <span class="text-sm text-text-secondary">Cached Models</span>
-            <div class="flex flex-wrap justify-end gap-1.5">
-              {#each status.models_cached as model}
+            <div class="flex flex-wrap items-center justify-end">
+              {#each status.models_cached as model, i}
                 <span
-                  class="rounded-full bg-surface-600 px-2 py-0.5 text-xs font-mono text-text-secondary"
+                  class="rounded-full bg-surface-600 px-2 py-0.5 text-xs font-mono text-text-secondary {i >
+                  0
+                    ? 'ml-1.5'
+                    : ''}"
                 >
                   {model}
                 </span>

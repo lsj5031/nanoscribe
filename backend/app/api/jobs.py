@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import AsyncGenerator
 
+import structlog
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -15,7 +15,7 @@ from app.schemas.jobs import CancelResponse, JobDetailResponse, JobListResponse
 from app.services import jobs as job_service
 from app.services.sse import get_sse_manager
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["jobs"])
 

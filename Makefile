@@ -1,4 +1,4 @@
-.PHONY: build build-dev build-prod shell run smoke dev check backend-check frontend-check hooks-install clean help
+.PHONY: build build-dev build-prod shell run smoke dev frontend-build check backend-check frontend-check hooks-install clean help
 
 .DEFAULT_GOAL := help
 
@@ -14,7 +14,8 @@ help: ## Show this help
 	@echo "  build           Build the dev image (default)"
 	@echo "  build-dev       Build the dev image (with Node.js, pnpm, dev tools)"
 	@echo "  build-prod      Build the production image (with built SPA)"
-	@echo "  dev             Start dev environment with hot reload"
+	@echo "  dev             Start dev environment with hot reload (builds frontend on first run)"
+	@echo "  frontend-build  Build the frontend SPA inside the container"
 	@echo "  shell           Open an interactive shell with GPU and caches mounted"
 	@echo "  run             Run a one-shot readiness check"
 	@echo "  smoke           Verify funasr and modelscope imports"
@@ -32,8 +33,17 @@ build-dev:
 build-prod:
 	docker build --target production --build-arg BASE_IMAGE=$(BASE_IMAGE) -t $(IMAGE)-prod .
 
+frontend-build:
+	docker compose exec funasr bash -c "cd /app/frontend && pnpm install && pnpm build"
+
 dev:
 	docker compose up -d && echo "Dev server starting on http://localhost:$(HOST_PORT)"
+	@if [ ! -d frontend/build ]; then \
+		echo "Building frontend (first run)..."; \
+		$(MAKE) frontend-build; \
+		docker compose restart funasr; \
+		echo "Frontend built — server restarted."; \
+	fi
 
 shell:
 	docker compose run --rm funasr /bin/bash

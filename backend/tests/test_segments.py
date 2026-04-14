@@ -178,14 +178,14 @@ class TestGetAudio:
     """Tests for GET /api/memos/{memoId}/audio."""
 
     def test_returns_normalized_audio(self, client: TestClient, tmp_path: Path) -> None:
-        """Returns audio_normalized.wav when it exists."""
+        """Returns normalized.wav when it exists."""
         data = tmp_path / "data"
         memo_id = "test-audio-memo"
         _insert_memo(data / "nanoscribe.db", memo_id=memo_id)
 
         memo_dir = data / "memos" / memo_id
         memo_dir.mkdir(parents=True, exist_ok=True)
-        audio_file = memo_dir / "audio_normalized.wav"
+        audio_file = memo_dir / "normalized.wav"
         audio_file.write_bytes(b"RIFF" + b"\x00" * 100)
 
         resp = client.get(f"/api/memos/{memo_id}/audio")
@@ -193,15 +193,41 @@ class TestGetAudio:
         assert resp.headers["content-type"] == "audio/wav"
         assert len(resp.content) > 0
 
-    def test_fallback_to_audio_original(self, client: TestClient, tmp_path: Path) -> None:
-        """Falls back to audio_original.* when normalized is absent."""
+    def test_fallback_to_source_original(self, client: TestClient, tmp_path: Path) -> None:
+        """Falls back to source.original when normalized.wav is absent."""
         data = tmp_path / "data"
         memo_id = "test-fallback-memo"
         _insert_memo(data / "nanoscribe.db", memo_id=memo_id)
 
         memo_dir = data / "memos" / memo_id
         memo_dir.mkdir(parents=True, exist_ok=True)
-        audio_file = memo_dir / "audio_original.mp3"
+        audio_file = memo_dir / "source.original"
+        audio_file.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        resp = client.get(f"/api/memos/{memo_id}/audio")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/wav"
+
+    def test_source_original_content_type_from_db(self, client: TestClient, tmp_path: Path) -> None:
+        """Looks up source_filename in DB for correct content-type on source.original."""
+        data = tmp_path / "data"
+        memo_id = "test-content-type-memo"
+        # Insert memo with mp3 source_filename
+        now = _now_iso()
+        db = data / "nanoscribe.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "INSERT INTO memos (id, title, source_kind, source_filename, status, "
+            "transcript_revision, created_at, updated_at) "
+            "VALUES (?, ?, 'upload', 'interview.mp3', ?, ?, ?, ?)",
+            (memo_id, "Test", "completed", 0, now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        memo_dir = data / "memos" / memo_id
+        memo_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = memo_dir / "source.original"
         audio_file.write_bytes(b"ID3" + b"\x00" * 100)
 
         resp = client.get(f"/api/memos/{memo_id}/audio")

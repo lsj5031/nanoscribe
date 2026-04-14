@@ -5,14 +5,15 @@ Collects GPU info, storage usage, memo count, and cached models.
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from pathlib import Path
+
+import structlog
 
 from app.core.config import get_settings
 from app.services.capabilities import _detect_gpu, _detect_model_ready
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _settings = get_settings()
 DATA_DIR = _settings.data_dir
@@ -24,7 +25,7 @@ def get_system_status() -> dict:
     Returns a dict matching StatusResponse schema.
     """
     gpu_available, device = _detect_gpu()
-    model_loaded = _detect_model_ready()
+    model_cached = _detect_model_ready()
 
     # Extract GPU name from device string (e.g. "cuda:NVIDIA RTX 3070")
     gpu_name: str | None = None
@@ -40,11 +41,11 @@ def get_system_status() -> dict:
     # Cached models
     models_cached = _get_cached_models()
 
-    status = "ready" if model_loaded else "loading"
+    status = "ready" if model_cached else "loading"
 
     return {
         "status": status,
-        "model_loaded": model_loaded,
+        "model_loaded": model_cached,
         "device": device.split(":")[0] if ":" in device else device,
         "gpu_available": gpu_available,
         "gpu_name": gpu_name,
@@ -63,7 +64,7 @@ def _compute_storage_mb(data_dir: Path) -> float:
             if f.is_file():
                 total += f.stat().st_size
     except Exception:
-        logger.debug("Failed to compute storage size", exc_info=True)
+        logger.debug("storage_size_computation_failed", exc_info=True)
     return round(total / (1024 * 1024), 1)
 
 
@@ -79,7 +80,7 @@ def _count_memos(db_path: Path) -> int:
         finally:
             conn.close()
     except Exception:
-        logger.debug("Failed to count memos", exc_info=True)
+        logger.debug("memo_count_failed", exc_info=True)
         return 0
 
 

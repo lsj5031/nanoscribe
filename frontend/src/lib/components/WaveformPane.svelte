@@ -188,9 +188,16 @@
     const newLevel = Math.max(1, zoomLevel - 1);
     setZoomLevel(newLevel);
     if (newLevel === 1) {
-      (ws as any).zoom(false); // Fit to container
+      resetZoom();
     } else {
       ws?.zoom(newLevel * 100);
+    }
+  }
+
+  function resetZoom() {
+    setZoomLevel(1);
+    if (ws) {
+      (ws as any).zoom(false); // Fit to container
     }
   }
 
@@ -258,9 +265,20 @@
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
       </button>
-      <span class="min-w-[2rem] text-center text-xs tabular-nums text-text-muted">
+      <button
+        onclick={() => {
+          if (zoomLevel > 1) resetZoom();
+        }}
+        class="flex h-6 items-center justify-center gap-0.5 rounded px-1 text-xs tabular-nums text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary"
+        aria-label="Reset zoom"
+        title="Reset zoom"
+      >
+        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
         {zoomLevel}x
-      </span>
+      </button>
       <button
         onclick={handleZoomIn}
         disabled={zoomLevel >= 8}
@@ -283,7 +301,12 @@
 
     <!-- Speed selector -->
     <div class="ml-auto flex items-center gap-1">
-      <label for="speed-select" class="text-xs text-text-muted">Speed:</label>
+      <label for="speed-select" class="flex items-center gap-0.5 text-xs text-text-muted">
+        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="6,3 20,12 6,21" />
+        </svg>
+        Speed:
+      </label>
       <select
         id="speed-select"
         value={playbackSpeed}
@@ -291,7 +314,7 @@
         class="rounded border border-border bg-surface-700 px-2 py-1 text-xs text-text-primary outline-none focus:border-accent"
       >
         {#each speeds as speed}
-          <option value={speed}>{speed}x</option>
+          <option value={speed}>{speed}×</option>
         {/each}
       </select>
     </div>

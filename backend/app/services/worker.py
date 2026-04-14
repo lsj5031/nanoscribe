@@ -12,8 +12,11 @@ queued jobs and processes them sequentially through the full pipeline:
 from __future__ import annotations
 
 import asyncio
-import logging
+import time
 from pathlib import Path
+
+import structlog
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from app.core.config import get_settings
 from app.services import jobs as job_service
@@ -26,7 +29,7 @@ from app.services.normalization import (
 from app.services.sse import get_sse_manager
 from app.services.transcription import TranscriptionError, persist_transcript
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Polling interval for checking queued jobs
 POLL_INTERVAL_SECONDS = 2.0
@@ -67,19 +70,19 @@ class WorkerLoop:
     async def run(self) -> None:
         """Main worker loop. Polls for queued jobs and processes them."""
         self._running = True
-        logger.info("Worker loop started")
+        logger.info("worker_loop_started")
 
         try:
             while self._running:
                 try:
                     await self._process_next_job()
                 except Exception as exc:
-                    logger.error("Worker error: %s", exc, exc_info=True)
+                    logger.error("worker_loop_error", error=str(exc), exc_info=True)
 
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
         finally:
             self._running = False
-            logger.info("Worker loop stopped")
+            logger.info("worker_loop_stopped")
 
     async def _process_next_job(self) -> None:
         """Pick up and process the next queued job, if any."""
@@ -91,17 +94,22 @@ class WorkerLoop:
         memo_id = next_job["memo_id"]
         self._current_job_id = job_id
 
-        logger.info("Processing job %s for memo %s", job_id, memo_id)
+        # Bind job context so all subsequent log calls include job_id/memo_id
+        clear_contextvars()
+        bind_contextvars(job_id=job_id, memo_id=memo_id)
+
+        logger.info("job_picked", attempt_count=next_job.get("attempt_count"))
 
         try:
             await self._run_pipeline(job_id, memo_id, next_job)
         except Exception as exc:
-            logger.error("Pipeline failed for job %s: %s", job_id, exc, exc_info=True)
+            logger.error("pipeline_failed", error=str(exc), exc_info=True)
             job_service.fail_job(self.db_path, job_id, "UNKNOWN", str(exc))
             get_sse_manager().publish_failed(job_id, "UNKNOWN", str(exc))
         finally:
             self._current_job_id = None
             self._cancelled.discard(job_id)
+            clear_contextvars()
 
     async def _run_pipeline(self, job_id: str, memo_id: str, job: dict) -> None:
         """Execute the full processing pipeline for a job."""
@@ -113,6 +121,7 @@ class WorkerLoop:
         job_service.transition_job(self.db_path, job_id, "preprocessing")
         sse.publish_stage(job_id, "preprocessing")
         job_service.update_progress(self.db_path, job_id, 0.05)
+        logger.info("stage_started", stage="preprocessing")
 
         if self.is_cancelled(job_id):
             self._do_cancel(job_id)
@@ -120,13 +129,16 @@ class WorkerLoop:
 
         source_path = memo_dir / "source.original"
         if not source_path.exists():
+            logger.error("source_file_missing", path=str(source_path))
             job_service.fail_job(self.db_path, job_id, "NORMALIZATION_FAILED", "Source file not found")
             sse.publish_failed(job_id, "NORMALIZATION_FAILED", "Source file not found")
             return
 
         try:
             normalized_path = normalize_audio(source_path, memo_dir)
+            logger.info("audio_normalized", output=str(normalized_path))
         except NormalizationError as exc:
+            logger.error("normalization_failed", error=str(exc))
             job_service.fail_job(self.db_path, job_id, "NORMALIZATION_FAILED", str(exc))
             sse.publish_failed(job_id, "NORMALIZATION_FAILED", str(exc))
             return
@@ -140,15 +152,17 @@ class WorkerLoop:
                 conn.commit()
             finally:
                 conn.close()
+            logger.info("duration_extracted", duration_ms=duration_ms)
         except NormalizationError:
-            pass  # Non-fatal — duration is informational
+            logger.debug("duration_extraction_skipped")  # Non-fatal
 
         # Extract waveform
         try:
             extract_waveform_peaks(normalized_path, memo_dir)
             sse.publish(job_id, {"event": "waveform.ready", "data": {"memo_id": memo_id}})
+            logger.info("waveform_extracted")
         except NormalizationError:
-            pass  # Non-fatal
+            logger.debug("waveform_extraction_skipped")  # Non-fatal
 
         job_service.update_progress(self.db_path, job_id, 0.1)
 
@@ -157,8 +171,10 @@ class WorkerLoop:
             return
 
         # ── Stage 2: Transcribing ───────────────────────────────────
+        t_transcribe_start = time.monotonic()
         job_service.transition_job(self.db_path, job_id, "transcribing")
         sse.publish_stage(job_id, "transcribing")
+        logger.info("stage_started", stage="transcribing")
 
         hotwords = job.get("hotwords")
 
@@ -167,11 +183,20 @@ class WorkerLoop:
 
             models = get_models()
             result = await asyncio.to_thread(models.transcribe, normalized_path, hotwords=hotwords)
+            t_transcribe_elapsed = time.monotonic() - t_transcribe_start
+            segment_count = len(result.get("segments", []))
+            logger.info(
+                "transcription_completed",
+                segment_count=segment_count,
+                elapsed_s=round(t_transcribe_elapsed, 2),
+            )
         except TranscriptionError as exc:
+            logger.error("transcription_failed", error=str(exc))
             job_service.fail_job(self.db_path, job_id, "ASR_FAILED", str(exc))
             sse.publish_failed(job_id, "ASR_FAILED", str(exc))
             return
         except Exception as exc:
+            logger.error("transcription_failed", error=str(exc), exc_info=True)
             job_service.fail_job(self.db_path, job_id, "ASR_FAILED", str(exc))
             sse.publish_failed(job_id, "ASR_FAILED", str(exc))
             return
@@ -187,9 +212,11 @@ class WorkerLoop:
         # ── Stage 2b: Diarization (optional) ────────────────────────
         enable_diarization = bool(job.get("enable_diarization"))
         if enable_diarization:
+            t_diarize_start = time.monotonic()
             job_service.transition_job(self.db_path, job_id, "diarizing")
             sse.publish_stage(job_id, "diarizing")
             job_service.update_progress(self.db_path, job_id, 0.75)
+            logger.info("stage_started", stage="diarizing")
 
             try:
                 from app.services.diarization import run_diarization
@@ -199,11 +226,16 @@ class WorkerLoop:
 
                 if diarization_segments:
                     result["segments"] = merge_diarization(result["segments"], diarization_segments)
+                    logger.info(
+                        "diarization_completed",
+                        speaker_segments=len(diarization_segments),
+                        elapsed_s=round(time.monotonic() - t_diarize_start, 2),
+                    )
 
                 job_service.update_progress(self.db_path, job_id, 0.85)
                 sse.publish_progress(job_id, 0.85, "diarizing")
             except Exception as exc:
-                logger.warning("Diarization failed for job %s, continuing without speakers: %s", job_id, exc)
+                logger.warning("diarization_failed", error=str(exc))
 
         if self.is_cancelled(job_id):
             self._do_cancel(job_id)
@@ -213,6 +245,7 @@ class WorkerLoop:
         job_service.transition_job(self.db_path, job_id, "finalizing")
         sse.publish_stage(job_id, "finalizing")
         job_service.update_progress(self.db_path, job_id, 0.9)
+        logger.info("stage_started", stage="finalizing")
 
         # Persist transcript
         try:
@@ -223,7 +256,9 @@ class WorkerLoop:
                 result["segments"],
                 self.db_path,
             )
+            logger.info("transcript_persisted")
         except Exception as exc:
+            logger.error("transcript_persist_failed", error=str(exc))
             job_service.fail_job(self.db_path, job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
             sse.publish_failed(job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
             return
@@ -235,7 +270,7 @@ class WorkerLoop:
 
                 await asyncio.to_thread(create_speaker_rows, self.db_path, memo_id, result["segments"])
             except Exception as exc:
-                logger.warning("Failed to create speaker rows for job %s: %s", job_id, exc)
+                logger.warning("speaker_rows_failed", error=str(exc))
 
         job_service.update_progress(self.db_path, job_id, 0.95)
 
@@ -246,13 +281,13 @@ class WorkerLoop:
         # ── Stage 4: Completed ──────────────────────────────────────
         job_service.transition_job(self.db_path, job_id, "completed")
         sse.publish_completed(job_id)
-        logger.info("Job %s completed successfully", job_id)
+        logger.info("job_completed")
 
     def _do_cancel(self, job_id: str) -> None:
         """Execute cancellation for a job."""
         job_service.cancel_job(self.db_path, job_id)
         get_sse_manager().publish_cancelled(job_id)
-        logger.info("Job %s cancelled", job_id)
+        logger.info("job_cancelled")
 
     def _get_conn(self):
         """Get a database connection."""

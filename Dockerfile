@@ -18,14 +18,31 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN /app/venv/bin/pip install --no-cache-dir \
     funasr \
     modelscope \
-    tiktoken
+    tiktoken \
+    structlog>=24.0.0 \
+    addict>=2.4.0 \
+    datasets>=4.0.0 \
+    "numpy<2.0.0" \
+    "scikit-learn>=1.3" \
+    soundfile \
+    kaldiio \
+    pyyaml \
+    pandas \
+    openpyxl \
+    pyannote.audio==3.1.1 \
+    umap-learn \
+    hdbscan \
+    fastcluster \
+    simplejson>=3.19 \
+    && /app/venv/bin/pip uninstall -y torchcodec || true
 
 # 3D-Speaker for speaker diarization
+# NOTE: Do NOT install 3D-Speaker's requirements.txt — it pins
+# numpy<1.24 and scikit-learn==1.0.2 which conflict with pyannote.audio.
+# The dependencies above provide everything 3D-Speaker needs.
 RUN apt-get update && apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/* && \
-    git clone https://github.com/modelscope/3D-Speaker.git /opt/3D-Speaker && \
-    cd /opt/3D-Speaker && \
-    /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+    git clone https://github.com/modelscope/3D-Speaker.git /opt/3D-Speaker
 
 RUN /app/venv/bin/pip install --no-cache-dir \
     ruff \

@@ -8,13 +8,13 @@ VAL-INTAKE-012: Waveform peaks extracted and stored as JSON array.
 from __future__ import annotations
 
 import json
-import logging
 import subprocess
 from pathlib import Path
 
 import numpy as np
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Target format: 16-bit PCM, 16kHz, mono
 TARGET_SAMPLE_RATE = 16000
@@ -89,7 +89,7 @@ def normalize_audio(source_path: Path, memo_dir: Path) -> Path:
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise NormalizationError("Audio normalization produced no output")
 
-    logger.info("Normalized audio: %s → %s", source_path.name, output_path.name)
+    logger.info("audio_normalized", source=source_path.name, output=output_path.name)
     return output_path
 
 
@@ -187,7 +187,7 @@ def extract_waveform_peaks(
         # Write JSON
         output_path.write_text(json.dumps(peaks))
 
-        logger.info("Extracted %d waveform peaks from %s", len(peaks), normalized_path.name)
+        logger.info("waveform_peaks_extracted", peak_count=len(peaks), source=normalized_path.name)
         return output_path
 
     except NormalizationError:

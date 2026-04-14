@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import structlog
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.responses import Response
 
 from app.core.config import get_settings
+from app.db import get_connection
 from app.schemas.segments import (
     ConflictResponse,
     PatchSegmentsRequest,
@@ -17,6 +19,8 @@ from app.schemas.segments import (
     SegmentsResponse,
 )
 from app.services import segments as segments_service
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["segments"])
 
@@ -89,16 +93,26 @@ async def get_audio(memo_id: str) -> Response:
     if not memo_dir.is_dir():
         raise HTTPException(status_code=404, detail="Memo not found")
 
-    # Prefer normalized wav, fall back to any audio_original.*
-    normalized = memo_dir / "audio_normalized.wav"
+    # Prefer normalized wav, fall back to source.original
+    normalized = memo_dir / "normalized.wav"
     if normalized.is_file():
         return _stream_audio(normalized, "audio/wav")
 
-    # Look for any audio_original.* file
-    for candidate in sorted(memo_dir.glob("audio_original.*")):
-        content_type = _content_type_for(candidate.name)
-        if content_type:
-            return _stream_audio(candidate, content_type)
+    # Fall back to source.original — look up original filename from DB for content type
+    source = memo_dir / "source.original"
+    if source.is_file():
+        content_type = "application/octet-stream"  # safe default
+        try:
+            conn = get_connection(DATA_DIR / "nanoscribe.db")
+            row = conn.execute("SELECT source_filename FROM memos WHERE id = ?", (memo_id,)).fetchone()
+            conn.close()
+            if row and row[0]:
+                guessed = _content_type_for(row[0])
+                if guessed:
+                    content_type = guessed
+        except Exception:
+            logger.debug("content_type_lookup_failed", exc_info=True)
+        return _stream_audio(source, content_type)
 
     raise HTTPException(status_code=404, detail="Audio file not found")
 

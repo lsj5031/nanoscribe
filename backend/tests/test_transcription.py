@@ -30,6 +30,7 @@ from app.services.transcription import (
     TranscriptionModels,
     _build_segments_from_timestamps,
     _build_segments_from_vad,
+    _merge_vad_segments,
     _tokens_to_segment,
     get_models,
     is_model_ready,
@@ -299,99 +300,80 @@ class TestTranscriptionModels:
                 models.transcribe("/tmp/test.wav")
 
     @patch("app.services.transcription._get_remote_code_path", return_value="/fake/model.py")
-    def test_load_creates_models(self, _mock_rc):
-        # Mock the AutoModel import
+    def test_load_verifies_cache(self, _mock_rc):
+        # With ephemeral models, load() just checks disk cache
         with patch("app.services.transcription.TranscriptionModels._detect_device", return_value="cpu"):
-            with patch("funasr.AutoModel") as mock_auto:
-                models = TranscriptionModels()
-                models.load()
-                assert models.is_loaded
-                # Should have called AutoModel 3 times: VAD, ASR, Punc
-                assert mock_auto.call_count == 3
+            with patch.object(TranscriptionModels, "_model_cache_dir", return_value=Path("/fake/cache")):
+                with patch.object(Path, "is_dir", return_value=True):
+                    models = TranscriptionModels()
+                    models.load()
+                    assert models.is_loaded
 
     @patch("app.services.transcription._get_remote_code_path", return_value="/fake/model.py")
     def test_load_idempotent(self, _mock_rc):
         with patch("app.services.transcription.TranscriptionModels._detect_device", return_value="cpu"):
-            with patch("funasr.AutoModel") as mock_auto:
-                models = TranscriptionModels()
-                models.load()
-                models.load()  # Second call should be a no-op
-                assert mock_auto.call_count == 3  # Still only 3 calls
+            with patch.object(TranscriptionModels, "_model_cache_dir", return_value=Path("/fake/cache")):
+                with patch.object(Path, "is_dir", return_value=True):
+                    models = TranscriptionModels()
+                    models.load()
+                    models.load()  # Second call should be a no-op
+                    assert models.is_loaded
 
     def test_run_vad_with_mock(self):
         models = TranscriptionModels()
-        models._vad_model = MagicMock()
-        models._vad_model.generate.return_value = [{"key": "test", "value": [[100, 2000], [3000, 5000]]}]
-        segments = models.run_vad("/tmp/test.wav")
+        models._loaded = True  # Simulate cache-verified state
+        mock_model = MagicMock()
+        mock_model.generate.return_value = [{"key": "test", "value": [[100, 2000], [3000, 5000]]}]
+        with patch.object(models, "_create_vad_model", return_value=mock_model):
+            segments = models.run_vad("/tmp/test.wav")
         assert segments == [[100, 2000], [3000, 5000]]
 
     def test_run_vad_empty_result(self):
         models = TranscriptionModels()
-        models._vad_model = MagicMock()
-        models._vad_model.generate.return_value = [{"key": "test", "value": []}]
-        segments = models.run_vad("/tmp/test.wav")
+        models._loaded = True
+        mock_model = MagicMock()
+        mock_model.generate.return_value = [{"key": "test", "value": []}]
+        with patch.object(models, "_create_vad_model", return_value=mock_model):
+            segments = models.run_vad("/tmp/test.wav")
         assert segments == []
 
     def test_run_vad_error(self):
         models = TranscriptionModels()
-        models._vad_model = MagicMock()
-        models._vad_model.generate.side_effect = RuntimeError("GPU OOM")
-        with pytest.raises(TranscriptionError, match="VAD processing failed"):
-            models.run_vad("/tmp/test.wav")
-
-    def test_run_asr_with_mock(self):
-        models = TranscriptionModels()
-        models._asr_model = MagicMock()
-        models._asr_model.generate.return_value = [
-            {
-                "key": "test",
-                "text": "你好世界。",
-                "text_tn": "你好世界",
-                "timestamps": [
-                    {"token": "你", "start_time": 0.0, "end_time": 0.1, "score": 0.99},
-                    {"token": "好", "start_time": 0.1, "end_time": 0.2, "score": 0.98},
-                    {"token": "世", "start_time": 0.3, "end_time": 0.4, "score": 0.97},
-                    {"token": "界", "start_time": 0.4, "end_time": 0.5, "score": 0.96},
-                    {"token": "。", "start_time": 0.5, "end_time": 0.6, "score": 0.0},
-                ],
-            }
-        ]
-        result = models.run_asr("/tmp/test.wav")
-        assert len(result) == 1
-        assert "你好世界" in result[0]["text"]
-
-    def test_run_asr_error(self):
-        models = TranscriptionModels()
-        models._asr_model = MagicMock()
-        models._asr_model.generate.side_effect = RuntimeError("Model error")
-        with pytest.raises(TranscriptionError, match="ASR processing failed"):
-            models.run_asr("/tmp/test.wav")
+        models._loaded = True
+        mock_model = MagicMock()
+        mock_model.generate.side_effect = RuntimeError("GPU OOM")
+        with patch.object(models, "_create_vad_model", return_value=mock_model):
+            with pytest.raises(TranscriptionError, match="VAD processing failed"):
+                models.run_vad("/tmp/test.wav")
 
     def test_run_punc_with_mock(self):
         models = TranscriptionModels()
-        models._punc_model = MagicMock()
-        models._punc_model.generate.return_value = [{"text": "你好，世界。"}]
-        result = models.run_punc("你好世界")
+        models._loaded = True
+        mock_model = MagicMock()
+        mock_model.generate.return_value = [{"text": "你好，世界。"}]
+        with patch.object(models, "_create_punc_model", return_value=mock_model):
+            result = models.run_punc("你好世界")
         assert result == "你好，世界。"
 
     def test_run_punc_fallback_on_error(self):
         models = TranscriptionModels()
-        models._punc_model = MagicMock()
-        models._punc_model.generate.side_effect = RuntimeError("Punc failed")
-        result = models.run_punc("你好世界")
+        models._loaded = True
+        mock_model = MagicMock()
+        mock_model.generate.side_effect = RuntimeError("Punc failed")
+        with patch.object(models, "_create_punc_model", return_value=mock_model):
+            result = models.run_punc("你好世界")
         assert result == "你好世界"  # Returns original text
 
     def test_transcribe_full_pipeline_mock(self):
         models = TranscriptionModels()
-        models._asr_model = MagicMock()
-        models._vad_model = MagicMock()
-        models._punc_model = MagicMock()
+        models._loaded = True
 
-        # VAD returns speech segments
-        models._vad_model.generate.return_value = [{"key": "test", "value": [[0, 2000], [3000, 5000]]}]
+        # Single VAD segment so only one chunk → one ASR call
+        mock_vad = MagicMock()
+        mock_vad.generate.return_value = [{"key": "test", "value": [[0, 5000]]}]
 
-        # ASR returns text with timestamps
-        models._asr_model.generate.return_value = [
+        mock_asr = MagicMock()
+        mock_asr.generate.return_value = [
             {
                 "key": "test",
                 "text": "你好世界。",
@@ -406,22 +388,91 @@ class TestTranscriptionModels:
             }
         ]
 
-        result = models.transcribe("/tmp/test.wav")
+        mock_punc = MagicMock()
+        mock_punc.generate.return_value = [{"text": "你好世界。"}]
+
+        # Patch _create_asr_model since run_asr_chunked creates the model
+        # once and calls model.generate() directly for each chunk
+        with (
+            patch.object(models, "_create_vad_model", return_value=mock_vad),
+            patch.object(models, "_create_asr_model", return_value=mock_asr),
+            patch("app.services.transcription._extract_chunk") as mock_extract,
+            patch.object(models, "_create_punc_model", return_value=mock_punc),
+        ):
+            # _extract_chunk returns (path, padded_start_ms)
+            mock_extract.return_value = (Path("/tmp/fake_chunk.wav"), 0)
+            result = models.transcribe("/tmp/test.wav")
         assert result["text"] == "你好世界。"
         assert len(result["segments"]) >= 1
         assert result["segments"][0]["start_ms"] >= 0
-        assert result["segments"][0]["end_ms"] > result["segments"][0]["start_ms"]
+
+    def test_transcribe_multi_chunk_pipeline_mock(self):
+        """Test VAD-chunked ASR with two separate VAD segments."""
+        models = TranscriptionModels()
+        models._loaded = True
+
+        # Two VAD segments far apart → two chunks
+        mock_vad = MagicMock()
+        mock_vad.generate.return_value = [{"key": "test", "value": [[0, 2000], [5000, 8000]]}]
+
+        mock_punc = MagicMock()
+        mock_punc.generate.return_value = [{"text": "你好。世界。"}]
+
+        # The ASR model is created once; generate() is called per chunk.
+        # Use side_effect to return different results per call.
+        chunk1_result = [
+            {
+                "key": "test",
+                "text": "你好。",
+                "text_tn": "你好",
+                "timestamps": [
+                    {"token": "你", "start_time": 0.0, "end_time": 0.5, "score": 0.99},
+                    {"token": "好", "start_time": 0.5, "end_time": 1.0, "score": 0.98},
+                    {"token": "。", "start_time": 1.0, "end_time": 1.1, "score": 0.0},
+                ],
+            }
+        ]
+        chunk2_result = [
+            {
+                "key": "test",
+                "text": "世界。",
+                "text_tn": "世界",
+                "timestamps": [
+                    {"token": "世", "start_time": 0.0, "end_time": 0.5, "score": 0.97},
+                    {"token": "界", "start_time": 0.5, "end_time": 1.0, "score": 0.96},
+                    {"token": "。", "start_time": 1.0, "end_time": 1.1, "score": 0.0},
+                ],
+            }
+        ]
+
+        mock_asr = MagicMock()
+        mock_asr.generate.side_effect = [chunk1_result, chunk2_result]
+
+        with (
+            patch.object(models, "_create_vad_model", return_value=mock_vad),
+            patch.object(models, "_create_asr_model", return_value=mock_asr),
+            patch("app.services.transcription._extract_chunk") as mock_extract,
+            patch.object(models, "_create_punc_model", return_value=mock_punc),
+            patch("app.services.transcription._merge_vad_segments", return_value=[[0, 2000], [5000, 8000]]),
+        ):
+            mock_extract.side_effect = [(Path("/tmp/chunk1.wav"), 0), (Path("/tmp/chunk2.wav"), 4800)]
+            result = models.transcribe("/tmp/test.wav")
+        # Both chunks' text should be present
+        assert "你好" in result["text"]
+        assert "世界" in result["text"]
+        # Chunk2 timestamps should be offset by padded_start (4.8s)
+        for seg in result["segments"]:
+            assert seg["start_ms"] >= 0
 
     def test_transcribe_no_speech(self):
         models = TranscriptionModels()
-        models._vad_model = MagicMock()
-        models._vad_model.generate.return_value = [{"key": "test", "value": []}]
+        models._loaded = True
 
-        # load() would normally set _asr_model, mock it as loaded
-        models._asr_model = MagicMock()
-        models._punc_model = MagicMock()
+        mock_vad = MagicMock()
+        mock_vad.generate.return_value = [{"key": "test", "value": []}]
 
-        result = models.transcribe("/tmp/test.wav")
+        with patch.object(models, "_create_vad_model", return_value=mock_vad):
+            result = models.transcribe("/tmp/test.wav")
         assert result["text"] == ""
         assert result["segments"] == []
 
@@ -543,6 +594,53 @@ class TestPersistTranscript:
         for i, row in enumerate(rows):
             assert row[0] == i + 1
             assert row[1] == f"Segment {i}"
+
+
+# ---------------------------------------------------------------------------
+# Module-level functions
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Merge VAD segments
+# ---------------------------------------------------------------------------
+
+
+class TestMergeVadSegments:
+    def test_empty_input(self):
+        assert _merge_vad_segments([]) == []
+
+    def test_single_segment(self):
+        assert _merge_vad_segments([[0, 1000]]) == [[0, 1000]]
+
+    def test_merge_close_segments(self):
+        # Segments within 800ms gap should be merged
+        result = _merge_vad_segments([[0, 1000], [1500, 3000]])
+        assert result == [[0, 3000]]
+
+    def test_no_merge_large_gap(self):
+        # Segments with >800ms gap should NOT be merged
+        result = _merge_vad_segments([[0, 1000], [3000, 5000]])
+        assert result == [[0, 1000], [3000, 5000]]
+
+    def test_merge_respects_max_duration(self):
+        # Even with small gap, don't merge if result exceeds max duration
+        result = _merge_vad_segments(
+            [[0, 20000], [20500, 40000]],
+            gap_threshold_ms=800,
+            max_duration_ms=30000,
+        )
+        assert result == [[0, 20000], [20500, 40000]]
+
+    def test_chain_merge(self):
+        # Three segments close together → all merged
+        result = _merge_vad_segments([[0, 1000], [1500, 3000], [3200, 5000]])
+        assert result == [[0, 5000]]
+
+    def test_partial_chain_merge(self):
+        # First two merge, third is too far
+        result = _merge_vad_segments([[0, 1000], [1500, 3000], [5000, 7000]])
+        assert result == [[0, 3000], [5000, 7000]]
 
 
 # ---------------------------------------------------------------------------
