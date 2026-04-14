@@ -1,4 +1,4 @@
-"""System API endpoints – health, capabilities."""
+"""System API endpoints – health, capabilities, status."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.db import check_db_health
-from app.schemas.system import CapabilitiesResponse, HealthResponse
+from app.schemas.system import CapabilitiesResponse, HealthResponse, StatusResponse
 from app.services.capabilities import get_capabilities
+from app.services.status import get_system_status
 
 router = APIRouter(tags=["system"])
 
@@ -58,3 +59,13 @@ async def capabilities() -> CapabilitiesResponse:
     """
     caps = get_capabilities()
     return CapabilitiesResponse(**caps)
+
+
+@router.get("/status", response_model=StatusResponse)
+async def system_status() -> StatusResponse:
+    """Return runtime system status.
+
+    Provides GPU info, storage usage, memo count, and cached models.
+    """
+    status = get_system_status()
+    return StatusResponse(**status)

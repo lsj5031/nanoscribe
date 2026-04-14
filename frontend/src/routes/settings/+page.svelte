@@ -106,6 +106,7 @@
                 type="button"
                 role="switch"
                 aria-checked={getDiarizationEnabled()}
+                aria-label="Toggle speaker diarization"
                 onclick={handleDiarizationToggle}
                 class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out {getDiarizationEnabled()
                   ? 'bg-accent'

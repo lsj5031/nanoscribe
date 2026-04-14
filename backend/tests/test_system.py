@@ -27,17 +27,21 @@ def setup_data_dir(tmp_path: Path):
     # Patch the module-level constants
     import app.api.system as system_mod
     import app.main as main_mod
+    import app.services.status as status_mod
 
     original_data = main_mod.DATA_DIR
     original_sys_data = system_mod.DATA_DIR
+    original_status_data = status_mod.DATA_DIR
 
     main_mod.DATA_DIR = test_data
     system_mod.DATA_DIR = test_data
+    status_mod.DATA_DIR = test_data
 
     yield test_data
 
     main_mod.DATA_DIR = original_data
     system_mod.DATA_DIR = original_sys_data
+    status_mod.DATA_DIR = original_status_data
 
 
 @pytest.fixture
@@ -447,3 +451,97 @@ class TestDBConnectionDeduplication:
             assert result[0] == 1
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Status endpoint tests
+# ---------------------------------------------------------------------------
+class TestStatusEndpoint:
+    """GET /api/system/status returns runtime status info."""
+
+    def test_status_returns_200(self, client):
+        """Status endpoint returns HTTP 200."""
+        resp = client.get("/api/system/status")
+        assert resp.status_code == 200
+
+    def test_status_has_required_fields(self, client):
+        """Status response has all required fields."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert "status" in data
+        assert "model_loaded" in data
+        assert "device" in data
+        assert "gpu_available" in data
+        assert "data_dir" in data
+        assert "memo_count" in data
+        assert "storage_used_mb" in data
+        assert "models_cached" in data
+
+    def test_status_field_is_string(self, client):
+        """Status field is a non-empty string."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["status"], str)
+        assert data["status"] in ("ready", "loading", "error")
+
+    def test_device_is_string(self, client):
+        """Device field is a string."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["device"], str)
+        assert len(data["device"]) > 0
+
+    def test_gpu_available_is_boolean(self, client):
+        """gpu_available is a boolean."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["gpu_available"], bool)
+
+    def test_memo_count_is_int(self, client):
+        """memo_count is an integer."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["memo_count"], int)
+        assert data["memo_count"] >= 0
+
+    def test_storage_used_mb_is_number(self, client):
+        """storage_used_mb is a number."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["storage_used_mb"], (int, float))
+        assert data["storage_used_mb"] >= 0
+
+    def test_models_cached_is_list(self, client):
+        """models_cached is a list of strings."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["models_cached"], list)
+        for model in data["models_cached"]:
+            assert isinstance(model, str)
+
+    def test_data_dir_is_string(self, client):
+        """data_dir is a string path."""
+        resp = client.get("/api/system/status")
+        data = resp.json()
+        assert isinstance(data["data_dir"], str)
+        assert len(data["data_dir"]) > 0
+
+    def test_memo_count_zero_when_no_db(self, client, setup_data_dir):
+        """memo_count is 0 when no DB file exists."""
+        db_path = setup_data_dir / "nanoscribe.db"
+        assert not db_path.exists()
+        resp = client.get("/api/system/status")
+        assert resp.json()["memo_count"] == 0
+
+    def test_memo_count_matches_db(self, client, setup_data_dir):
+        """memo_count reflects actual memo rows in the database."""
+        db_path = setup_data_dir / "nanoscribe.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS memos (id TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO memos (id) VALUES ('test-1')")
+        conn.execute("INSERT INTO memos (id) VALUES ('test-2')")
+        conn.commit()
+        conn.close()
+
+        resp = client.get("/api/system/status")
+        assert resp.json()["memo_count"] == 2
