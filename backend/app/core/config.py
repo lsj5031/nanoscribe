@@ -30,6 +30,7 @@ class Settings:
     punc_model: str = "ct-punc"
     host: str = "0.0.0.0"
     port: int = 8000
+    offline: bool = field(default_factory=lambda: os.environ.get("NANOSCRIBE_OFFLINE", "0") == "1")
 
     @property
     def db_path(self) -> Path:

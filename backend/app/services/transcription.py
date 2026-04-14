@@ -209,12 +209,15 @@ class TranscriptionModels:
         """Create an ephemeral VAD model on the inference device."""
         from funasr import AutoModel
 
-        return AutoModel(
-            model=VAD_MODEL,
-            disable_update=True,
-            model_hub="modelscope",
-            device=self._device,
-        )
+        kwargs: dict[str, Any] = {
+            "model": VAD_MODEL,
+            "disable_update": True,
+            "model_hub": "modelscope",
+            "device": self._device,
+        }
+        if _settings.offline:
+            kwargs["check_latest"] = False
+        return AutoModel(**kwargs)
 
     def _create_asr_model(self) -> Any:
         """Create an ephemeral ASR model on the inference device."""
@@ -229,18 +232,23 @@ class TranscriptionModels:
         }
         if self._remote_code:
             kwargs["remote_code"] = self._remote_code
+        if _settings.offline:
+            kwargs["check_latest"] = False
         return AutoModel(**kwargs)
 
     def _create_punc_model(self) -> Any:
         """Create an ephemeral Punc model on the inference device."""
         from funasr import AutoModel
 
-        return AutoModel(
-            model=PUNC_MODEL,
-            disable_update=True,
-            model_hub="modelscope",
-            device=self._device,
-        )
+        kwargs: dict[str, Any] = {
+            "model": PUNC_MODEL,
+            "disable_update": True,
+            "model_hub": "modelscope",
+            "device": self._device,
+        }
+        if _settings.offline:
+            kwargs["check_latest"] = False
+        return AutoModel(**kwargs)
 
     # -- Inference methods ---------------------------------------------------------
 

@@ -67,7 +67,8 @@ RUN cd /app/frontend && pnpm install --frozen-lockfile 2>/dev/null || pnpm insta
 ENV PATH="/app/venv/bin:${PATH}" \
     HF_HUB_OFFLINE=0 \
     MODELSCOPE_CACHE=/home/appuser/.cache/modelscope \
-    NANOSCRIBE_DATA_DIR=/app/data
+    NANOSCRIBE_DATA_DIR=/app/data \
+    NANOSCRIBE_OFFLINE=0
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
@@ -115,6 +116,7 @@ COPY --from=builder --chown=appuser:appuser /app/frontend/build /app/static
 ENV PATH="/app/venv/bin:${PATH}" \
     HF_HUB_OFFLINE=0 \
     MODELSCOPE_CACHE=/home/appuser/.cache/modelscope \
-    NANOSCRIBE_DATA_DIR=/app/data
+    NANOSCRIBE_DATA_DIR=/app/data \
+    NANOSCRIBE_OFFLINE=0
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

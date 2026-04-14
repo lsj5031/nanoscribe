@@ -31,6 +31,10 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
     Gracefully degrades if 3D-Speaker is not installed.
     Uses GPU on-demand (same pattern as transcription) to avoid VRAM exhaustion.
     """
+    from app.core.config import get_settings
+
+    settings = get_settings()
+
     try:
         # Ensure 3D-Speaker is importable
         import speakerlab  # noqa: F401
@@ -49,6 +53,28 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
     try:
         import torch
         import torchaudio
+
+        # When offline mode is enabled, monkey-patch 3D-Speaker's
+        # download_model_from_modelscope to use local_files_only=True so
+        # it never attempts to contact the ModelScope server.
+        if settings.offline:
+            try:
+                import speakerlab.utils.utils as _utils_mod
+
+                def _offline_download(model_id, model_revision=None, cache_dir=None):  # type: ignore[no-untyped-def]
+                    from modelscope.hub.snapshot_download import snapshot_download
+
+                    return snapshot_download(
+                        model_id,
+                        revision=model_revision,
+                        cache_dir=cache_dir,
+                        local_files_only=True,
+                    )
+
+                _utils_mod.download_model_from_modelscope = _offline_download
+                logger.debug("diarization_offline_mode_patched")
+            except ImportError:
+                logger.debug("diarization_offline_patch_skipped")
 
         # Monkey-patch torchaudio for pyannote.audio compatibility:
         # pyannote.audio 3.x calls torchaudio.set_audio_backend() which was
