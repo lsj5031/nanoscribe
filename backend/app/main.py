@@ -12,6 +12,7 @@ from app.api.jobs import router as jobs_router
 from app.api.library import router as library_router
 from app.api.memos import router as memos_router
 from app.api.search import router as search_router
+from app.api.segments import router as segments_router
 from app.api.system import router as system_router
 from app.core.config import get_settings
 
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(memos_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
     app.include_router(search_router, prefix="/api")
+    app.include_router(segments_router, prefix="/api")
 
     # Startup: recover stale jobs and start worker
     @app.on_event("startup")
