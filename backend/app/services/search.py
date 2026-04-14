@@ -32,18 +32,45 @@ def search(
         # Use FTS5 to find candidate memo IDs (handles fuzzy/tokenized matching)
         matching_memo_ids = _find_matching_memo_ids(conn, safe_q)
 
-        if not matching_memo_ids:
-            return {"results": [], "total": 0}
+        # LIKE pattern for partial/substring matching (case-insensitive in SQLite)
+        like_pattern = f"%{q}%"
 
-        placeholders = ",".join("?" for _ in matching_memo_ids)
+        if matching_memo_ids:
+            # Use FTS5 candidates narrowed by LIKE for precise matching
+            placeholders = ",".join("?" for _ in matching_memo_ids)
 
-        # Title matches: check which matching memos have the query in their title
-        title_rows = conn.execute(
-            f"SELECT m.id AS memo_id, m.title AS memo_title "
-            f"FROM memos m "
-            f"WHERE m.id IN ({placeholders}) AND m.title LIKE ?",
-            [*matching_memo_ids, f"%{q}%"],
-        ).fetchall()
+            title_rows = conn.execute(
+                f"SELECT m.id AS memo_id, m.title AS memo_title "
+                f"FROM memos m "
+                f"WHERE m.id IN ({placeholders}) AND m.title LIKE ?",
+                [*matching_memo_ids, like_pattern],
+            ).fetchall()
+
+            seg_rows = conn.execute(
+                f"SELECT s.id AS segment_id, s.memo_id AS memo_id, "
+                f"s.text AS segment_text, s.start_ms, s.end_ms, "
+                f"m.title AS memo_title "
+                f"FROM segments s "
+                f"JOIN memos m ON m.id = s.memo_id "
+                f"WHERE s.memo_id IN ({placeholders}) AND s.text LIKE ?",
+                [*matching_memo_ids, like_pattern],
+            ).fetchall()
+        else:
+            # FTS5 returned nothing — fallback to LIKE-only search for substring matching
+            title_rows = conn.execute(
+                "SELECT m.id AS memo_id, m.title AS memo_title FROM memos m WHERE m.title LIKE ?",
+                [like_pattern],
+            ).fetchall()
+
+            seg_rows = conn.execute(
+                "SELECT s.id AS segment_id, s.memo_id AS memo_id, "
+                "s.text AS segment_text, s.start_ms, s.end_ms, "
+                "m.title AS memo_title "
+                "FROM segments s "
+                "JOIN memos m ON m.id = s.memo_id "
+                "WHERE s.text LIKE ?",
+                [like_pattern],
+            ).fetchall()
 
         for row in title_rows:
             results.append(
@@ -57,17 +84,6 @@ def search(
                     "end_ms": None,
                 }
             )
-
-        # Segment matches: find segments of matching memos that contain the query
-        seg_rows = conn.execute(
-            f"SELECT s.id AS segment_id, s.memo_id AS memo_id, "
-            f"s.text AS segment_text, s.start_ms, s.end_ms, "
-            f"m.title AS memo_title "
-            f"FROM segments s "
-            f"JOIN memos m ON m.id = s.memo_id "
-            f"WHERE s.memo_id IN ({placeholders}) AND s.text LIKE ?",
-            [*matching_memo_ids, f"%{q}%"],
-        ).fetchall()
 
         for row in seg_rows:
             text = row["segment_text"] or ""
