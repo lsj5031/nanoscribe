@@ -5,6 +5,7 @@
   import TranscriptPane from '$lib/components/TranscriptPane.svelte';
   import {
     initEditor,
+    cleanupEditor,
     getMemo,
     getLoading,
     getError,
@@ -43,6 +44,9 @@
     if (memoId) {
       initEditor(memoId);
     }
+    return () => {
+      cleanupEditor();
+    };
   });
 
   // Flush pending saves before leaving the page
@@ -213,12 +217,30 @@
         </svg>
       </div>
       <p class="text-sm text-text-secondary">{error}</p>
-      <button
-        onclick={goBack}
-        class="rounded-lg border border-border bg-surface-800 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-700"
-      >
-        Back to Library
-      </button>
+      <div class="flex gap-3">
+        <button
+          onclick={() => memoId && initEditor(memoId)}
+          class="flex items-center gap-2 rounded-lg border border-border bg-surface-800 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-700"
+        >
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="23,4 23,10 17,10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+          </svg>
+          Retry
+        </button>
+        <button
+          onclick={goBack}
+          class="rounded-lg border border-border bg-surface-800 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-700"
+        >
+          Back to Library
+        </button>
+      </div>
     </div>
   </div>
 {:else}

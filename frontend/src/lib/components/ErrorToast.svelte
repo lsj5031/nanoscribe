@@ -1,61 +1,83 @@
 <script lang="ts">
-  import { getUploadError, clearUploadError } from '$lib/stores/upload.svelte';
+  import { getToasts, dismissToast } from '$lib/stores/toasts.svelte';
+  import type { ToastType } from '$lib/stores/toasts.svelte';
 
-  const error = $derived(getUploadError());
+  const toasts = $derived(getToasts());
 
-  let visible = $state(false);
-  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const iconColor: Record<ToastType, string> = {
+    error: 'text-error',
+    warning: 'text-warning',
+    info: 'text-blue-400',
+    success: 'text-success'
+  };
 
-  $effect(() => {
-    if (error) {
-      visible = true;
-      // Auto-dismiss after 6 seconds
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        visible = false;
-        clearUploadError();
-      }, 6000);
-    } else {
-      visible = false;
+  const borderColor: Record<ToastType, string> = {
+    error: 'border-error/30',
+    warning: 'border-warning/30',
+    info: 'border-blue-400/30',
+    success: 'border-success/30'
+  };
+
+  function iconPath(type: ToastType): string {
+    switch (type) {
+      case 'error':
+        return 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+      case 'warning':
+        return 'M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z';
+      case 'success':
+        return 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z';
+      case 'info':
+        return 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
     }
-  });
-
-  function dismiss() {
-    visible = false;
-    if (timeout) clearTimeout(timeout);
-    clearUploadError();
   }
 </script>
 
-{#if visible && error}
-  <div class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-slide-up" role="alert">
-    <div
-      class="flex items-center gap-3 rounded-xl border border-error/30 bg-surface-800 px-5 py-3 shadow-xl"
-    >
-      <!-- Error icon -->
-      <svg
-        class="h-5 w-5 shrink-0 text-error"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
+{#if toasts.length > 0}
+  <div
+    class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"
+    role="region"
+    aria-label="Notifications"
+  >
+    {#each toasts as toast (toast.id)}
+      <div
+        class="flex items-start gap-3 rounded-xl border bg-surface-800 px-4 py-3 shadow-xl animate-slide-up {borderColor[
+          toast.type
+        ]}"
+        role="alert"
       >
-        <circle cx="12" cy="12" r="10" />
-        <line x1="15" y1="9" x2="9" y2="15" />
-        <line x1="9" y1="9" x2="15" y2="15" />
-      </svg>
-      <p class="text-sm text-text-primary">{error}</p>
-      <button
-        onclick={dismiss}
-        class="ml-2 shrink-0 rounded-lg p-1 text-text-muted transition-colors hover:text-text-primary"
-        aria-label="Dismiss error"
-      >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
+        <!-- Icon -->
+        <svg
+          class="mt-0.5 h-5 w-5 shrink-0 {iconColor[toast.type]}"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d={iconPath(toast.type)} />
         </svg>
-      </button>
-    </div>
+        <p class="min-w-0 flex-1 text-sm text-text-primary">{toast.message}</p>
+        {#if toast.dismissible}
+          <button
+            onclick={() => dismissToast(toast.id)}
+            class="shrink-0 rounded-lg p-1 text-text-muted transition-colors hover:text-text-primary"
+            aria-label="Dismiss"
+          >
+            <svg
+              class="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        {/if}
+      </div>
+    {/each}
   </div>
 {/if}
 
@@ -63,11 +85,11 @@
   @keyframes slide-up {
     from {
       opacity: 0;
-      transform: translate(-50%, 1rem);
+      transform: translateY(0.5rem);
     }
     to {
       opacity: 1;
-      transform: translate(-50%, 0);
+      transform: translateY(0);
     }
   }
   .animate-slide-up {

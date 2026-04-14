@@ -3,6 +3,8 @@
  * Handles memo listing, SSE-based real-time updates, delete, retry, and view preferences.
  */
 
+import { showError, showSuccess } from '$lib/stores/toasts.svelte';
+
 export interface MemoCard {
   id: string;
   title: string;
@@ -156,6 +158,7 @@ export async function fetchMemos(): Promise<void> {
     connectActiveJobSSE();
   } catch (e) {
     state.error = e instanceof Error ? e.message : 'Failed to load library';
+    showError(state.error);
   } finally {
     state.loading = false;
   }
@@ -178,12 +181,13 @@ export async function deleteMemo(memoId: string): Promise<void> {
     if (!res.ok && res.status !== 404) {
       throw new Error(`Delete failed: ${res.status}`);
     }
-  } catch {
+  } catch (e) {
     // Revert on failure
     if (removed && idx >= 0) {
       state.memos.splice(idx, 0, removed);
       state.total += 1;
     }
+    showError('Failed to delete memo');
   }
 }
 
@@ -206,9 +210,11 @@ export async function retryMemo(memoId: string): Promise<void> {
 
     // Connect SSE for the new job
     connectJobSSE(memoId, job.id);
+    showSuccess('Retrying transcription');
   } catch {
     // Revert on failure
     memo.status = 'failed';
+    showError('Failed to retry transcription');
   }
 }
 

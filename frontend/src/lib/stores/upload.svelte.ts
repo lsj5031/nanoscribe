@@ -3,6 +3,8 @@
  * Handles file upload via POST /api/memos, SSE progress tracking, and cancellation.
  */
 
+import { showError, showWarning } from '$lib/stores/toasts.svelte';
+
 export interface UploadJob {
   memoId: string;
   jobId: string;
@@ -58,7 +60,7 @@ export function getAudioFiles(files: File[]): File[] {
  */
 export async function uploadFiles(files: File[]): Promise<void> {
   if (files.length === 0) {
-    state.error = 'No files to upload';
+    showError('No files to upload');
     return;
   }
 
@@ -67,19 +69,15 @@ export async function uploadFiles(files: File[]): Promise<void> {
   const unsupported = getUnsupportedFileNames(files);
 
   if (audioFiles.length === 0) {
-    state.error = `Unsupported file format${unsupported.length > 1 ? 's' : ''}. Supported: WAV, MP3, M4A, AAC, WebM, OGG, OPUS`;
+    showError(
+      `Unsupported file format${unsupported.length > 1 ? 's' : ''}. Supported: WAV, MP3, M4A, AAC, WebM, OGG, OPUS`
+    );
     return;
   }
 
   if (unsupported.length > 0) {
-    // Show error for unsupported files but continue with valid ones
-    state.error = `Skipped unsupported: ${unsupported.join(', ')}`;
-    // Auto-clear the non-blocking error after 5 seconds
-    setTimeout(() => {
-      if (state.error?.startsWith('Skipped unsupported:')) {
-        state.error = null;
-      }
-    }, 5000);
+    // Show warning for unsupported files but continue with valid ones
+    showWarning(`Skipped unsupported: ${unsupported.join(', ')}`);
   }
 
   const formData = new FormData();
@@ -95,7 +93,7 @@ export async function uploadFiles(files: File[]): Promise<void> {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({ detail: 'Upload failed' }));
-      state.error = body.detail ?? body.error ?? `Upload failed (${res.status})`;
+      showError(body.detail ?? body.error ?? `Upload failed (${res.status})`);
       return;
     }
 
@@ -118,7 +116,7 @@ export async function uploadFiles(files: File[]): Promise<void> {
       }
     }
   } catch (e) {
-    state.error = e instanceof Error ? e.message : 'Upload failed';
+    showError(e instanceof Error ? e.message : 'Upload failed');
   }
 }
 

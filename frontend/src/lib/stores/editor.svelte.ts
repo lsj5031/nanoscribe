@@ -3,6 +3,8 @@
  * Handles segments, playback state, wavesurfer, and UI preferences.
  */
 
+import { showError, showWarning, showSuccess } from '$lib/stores/toasts.svelte';
+
 export interface Segment {
   id: string;
   ordinal: number;
@@ -75,6 +77,21 @@ function loadPaneWidth(): number {
 function savePaneWidth(w: number) {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem('nanoscribe-editor-pane-width', String(w));
+}
+
+function savePlaybackPosition(memoId: string, ms: number) {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(`nanoscribe-playback-${memoId}`, String(ms));
+}
+
+function loadPlaybackPosition(memoId: string): number | null {
+  if (typeof localStorage === 'undefined') return null;
+  const stored = localStorage.getItem(`nanoscribe-playback-${memoId}`);
+  if (stored) {
+    const val = parseFloat(stored);
+    if (!isNaN(val) && val >= 0) return val;
+  }
+  return null;
 }
 
 interface EditorState {
@@ -185,6 +202,19 @@ export function setIsPlaying(v: boolean): void {
 export function setCurrentTimeMs(ms: number): void {
   state.currentTimeMs = ms;
   _updateCurrentSegment();
+  // Persist playback position (throttled via requestAnimationFrame)
+  if (state.memoId) {
+    _pendingPositionSave = ms;
+    if (!_positionSaveTimer) {
+      _positionSaveTimer = setTimeout(() => {
+        if (state.memoId && _pendingPositionSave !== null) {
+          savePlaybackPosition(state.memoId, _pendingPositionSave);
+        }
+        _positionSaveTimer = null;
+        _pendingPositionSave = null;
+      }, 2000);
+    }
+  }
 }
 export function setDurationMs(ms: number): void {
   state.durationMs = ms;
@@ -211,6 +241,13 @@ export function setLeftPaneWidthPct(pct: number): void {
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
 // Track the last saved text per segment to avoid unnecessary saves
 let _pendingSaves: Map<string, string> = new Map();
+
+// Playback position persistence
+let _positionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingPositionSave: number | null = null;
+
+// SSE connection for active job in editor
+let _editorEventSource: EventSource | null = null;
 
 /**
  * Update segment text locally and debounce autosave.
@@ -270,7 +307,8 @@ async function _flushPendingSaves(): Promise<void> {
       state.revision = detail.current_revision ?? conflictData.current_revision;
       state.segments = detail.current_segments ?? conflictData.current_segments ?? [];
       state.saving = false;
-      state.saveError = 'Transcript was modified by another session. Refreshed.';
+      state.saveError = 'Transcript was modified in another tab. Updated to latest version.';
+      showWarning('Transcript was modified in another tab. Your view has been updated.');
       return;
     }
 
@@ -284,6 +322,7 @@ async function _flushPendingSaves(): Promise<void> {
   } catch (e) {
     state.saving = false;
     state.saveError = e instanceof Error ? e.message : 'Save failed';
+    showError('Failed to save changes. Will retry on next edit.');
     // Revert local changes on error
     for (const upd of updates) {
       const seg = state.segments.find((s) => s.id === upd.segment_id);
@@ -354,10 +393,94 @@ export async function initEditor(memoId: string): Promise<void> {
     if (state.memo?.duration_ms) {
       state.durationMs = state.memo.duration_ms;
     }
+
+    // Restore last playback position
+    const savedPosition = loadPlaybackPosition(memoId);
+    if (savedPosition !== null && savedPosition > 0) {
+      state.currentTimeMs = savedPosition;
+    }
+
+    // Reconnect SSE if there's an active (non-terminal) job
+    if (state.memo?.latest_job?.id) {
+      const jobStatus = state.memo.latest_job.status;
+      const activeStatuses = ['queued', 'preprocessing', 'transcribing', 'diarizing', 'finalizing'];
+      if (activeStatuses.includes(jobStatus)) {
+        connectEditorSSE(state.memo.latest_job.id);
+      }
+    }
   } catch (e) {
     state.error = e instanceof Error ? e.message : 'Failed to load editor';
+    showError(state.error);
   } finally {
     state.loading = false;
+  }
+}
+
+/**
+ * Connect SSE for the active job in the editor (for refresh resilience).
+ */
+function connectEditorSSE(jobId: string): void {
+  disconnectEditorSSE();
+
+  _editorEventSource = new EventSource(`/api/jobs/${jobId}/events`);
+
+  _editorEventSource.addEventListener('job.completed', () => {
+    disconnectEditorSSE();
+    // Reload data after completion
+    if (state.memoId) initEditor(state.memoId);
+    showSuccess('Transcription completed');
+  });
+
+  _editorEventSource.addEventListener('job.failed', (e: MessageEvent) => {
+    disconnectEditorSSE();
+    try {
+      const data = JSON.parse(e.data);
+      showError(`Transcription failed: ${data.error_message ?? 'Unknown error'}`);
+    } catch {
+      showError('Transcription failed');
+    }
+  });
+
+  _editorEventSource.addEventListener('job.cancelled', () => {
+    disconnectEditorSSE();
+    showWarning('Transcription was cancelled');
+  });
+
+  _editorEventSource.addEventListener('job.stage', (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (state.memo) {
+        state.memo.status = data.status ?? state.memo.status;
+      }
+    } catch {
+      // ignore parse errors
+    }
+  });
+
+  _editorEventSource.onerror = () => {
+    // Don't show error toast on SSE disconnect — the job may still be running
+    disconnectEditorSSE();
+  };
+}
+
+function disconnectEditorSSE(): void {
+  if (_editorEventSource) {
+    _editorEventSource.close();
+    _editorEventSource = null;
+  }
+}
+
+/**
+ * Cleanup editor resources (call on unmount).
+ */
+export function cleanupEditor(): void {
+  disconnectEditorSSE();
+  if (_positionSaveTimer) {
+    clearTimeout(_positionSaveTimer);
+    _positionSaveTimer = null;
+  }
+  if (state.memoId && state.currentTimeMs > 0) {
+    savePlaybackPosition(state.memoId, state.currentTimeMs);
   }
 }
 
