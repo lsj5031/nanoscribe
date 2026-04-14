@@ -14,6 +14,13 @@ export interface Segment {
   edited: boolean;
 }
 
+export interface Speaker {
+  id: string;
+  speaker_key: string;
+  display_name: string;
+  color: string;
+}
+
 export interface SegmentsResponse {
   memo_id: string;
   revision: number;
@@ -74,6 +81,7 @@ interface EditorState {
   memoId: string;
   memo: MemoDetail | null;
   segments: Segment[];
+  speakers: Speaker[];
   revision: number;
   loading: boolean;
   error: string | null;
@@ -93,6 +101,7 @@ let state = $state<EditorState>({
   memoId: '',
   memo: null,
   segments: [],
+  speakers: [],
   revision: 0,
   loading: false,
   error: null,
@@ -117,6 +126,9 @@ export function getMemo(): MemoDetail | null {
 }
 export function getSegments(): Segment[] {
   return state.segments;
+}
+export function getSpeakers(): Speaker[] {
+  return state.speakers;
 }
 export function getRevision(): number {
   return state.revision;
@@ -315,9 +327,10 @@ export async function initEditor(memoId: string): Promise<void> {
   state.error = null;
 
   try {
-    const [memoRes, segRes] = await Promise.all([
+    const [memoRes, segRes, speakersRes] = await Promise.all([
       fetch(`/api/memos/${memoId}`),
-      fetch(`/api/memos/${memoId}/segments`)
+      fetch(`/api/memos/${memoId}/segments`),
+      fetch(`/api/memos/${memoId}/speakers`)
     ]);
 
     if (!memoRes.ok) {
@@ -330,6 +343,11 @@ export async function initEditor(memoId: string): Promise<void> {
       const segData: SegmentsResponse = await segRes.json();
       state.segments = segData.segments;
       state.revision = segData.revision;
+    }
+
+    if (speakersRes.ok) {
+      const speakersData = await speakersRes.json();
+      state.speakers = speakersData.speakers ?? [];
     }
 
     // Set duration from memo metadata
@@ -416,10 +434,12 @@ export function formatTime(ms: number): string {
 }
 
 /**
- * Get speaker color for a speaker key. Uses a fixed palette.
+ * Get speaker color for a speaker key. Uses loaded speaker data, falls back to palette.
  */
 export function getSpeakerColor(speakerKey: string | null): string {
   if (!speakerKey) return '#6b7280'; // text-muted
+  const speaker = state.speakers.find((s) => s.speaker_key === speakerKey);
+  if (speaker) return speaker.color;
   const palette = [
     '#00d4ff', // accent/teal
     '#f472b6', // pink
@@ -435,4 +455,45 @@ export function getSpeakerColor(speakerKey: string | null): string {
     hash = speakerKey.charCodeAt(i) + ((hash << 5) - hash);
   }
   return palette[Math.abs(hash) % palette.length];
+}
+
+/**
+ * Get speaker display name for a speaker key.
+ */
+export function getSpeakerDisplayName(speakerKey: string | null): string {
+  if (!speakerKey) return '';
+  const speaker = state.speakers.find((s) => s.speaker_key === speakerKey);
+  if (speaker) return speaker.display_name;
+  // Fallback: capitalize speaker key
+  return speakerKey;
+}
+
+/**
+ * Rename a speaker by calling PATCH and updating local state.
+ */
+export async function renameSpeaker(speakerKey: string, newName: string): Promise<void> {
+  const speaker = state.speakers.find((s) => s.speaker_key === speakerKey);
+  if (!speaker) return;
+
+  const color = speaker.color;
+
+  try {
+    const resp = await fetch(`/api/memos/${state.memoId}/speakers`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        updates: [{ speaker_key: speakerKey, display_name: newName, color }]
+      })
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Failed to rename speaker: ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    state.speakers = data.speakers ?? state.speakers;
+  } catch (e) {
+    console.error('Failed to rename speaker:', e);
+    throw e;
+  }
 }
