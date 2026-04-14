@@ -19,7 +19,7 @@ import pytest
 os.environ.setdefault("NANOSCRIBE_DATA_DIR", "/tmp/nanoscribe-test-reprocess")
 os.environ.setdefault("NANOSCRIBE_STATIC_DIR", "/tmp/nanoscribe-test-static")
 
-from app.db import get_connection
+from app.db import db_connection
 from app.db.migrate import run_migrations
 
 
@@ -39,8 +39,7 @@ def _insert_memo(
 ) -> str:
     memo_id = memo_id or str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO memos
@@ -51,8 +50,6 @@ def _insert_memo(
             (memo_id, title, source_filename, status, transcript_revision, language_override, now, now),
         )
         conn.commit()
-    finally:
-        conn.close()
     return memo_id
 
 
@@ -71,8 +68,7 @@ def _insert_job(
 ) -> str:
     job_id = job_id or str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO jobs
@@ -98,23 +94,17 @@ def _insert_job(
             ),
         )
         conn.commit()
-    finally:
-        conn.close()
     return job_id
 
 
 def _count_jobs(db_path: Path, memo_id: str) -> int:
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) FROM jobs WHERE memo_id = ?", (memo_id,)).fetchone()
         return row[0]
-    finally:
-        conn.close()
 
 
 def _get_latest_job(db_path: Path, memo_id: str) -> dict:
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM jobs WHERE memo_id = ? ORDER BY created_at DESC LIMIT 1",
             (memo_id,),
@@ -127,18 +117,13 @@ def _get_latest_job(db_path: Path, memo_id: str) -> dict:
             ).description
         ]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 def _get_memo(db_path: Path, memo_id: str) -> dict:
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         row = conn.execute("SELECT * FROM memos WHERE id = ?", (memo_id,)).fetchone()
         col_names = [desc[0] for desc in conn.execute("SELECT * FROM memos WHERE id = ?", (memo_id,)).description]
         return dict(zip(col_names, row))
-    finally:
-        conn.close()
 
 
 # ---------------------------------------------------------------------------

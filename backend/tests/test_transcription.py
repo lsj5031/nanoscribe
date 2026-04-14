@@ -23,7 +23,7 @@ os.environ.setdefault("NANOSCRIBE_DATA_DIR", "/tmp/nanoscribe-test-transcription
 os.environ.setdefault("NANOSCRIBE_STATIC_DIR", "/tmp/nanoscribe-test-static")
 
 from app.core.config import get_settings
-from app.db import get_connection
+from app.db import db_connection
 from app.db.migrate import run_migrations
 from app.services.transcription import (
     TranscriptionError,
@@ -84,8 +84,7 @@ def memo_dir(tmp_path: Path) -> Path:
 def _insert_memo_and_job(db_path: Path, memo_id: str) -> str:
     """Insert a minimal memo and job row for testing."""
     now = "2026-04-14T00:00:000000Z"
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO memos (id, title, source_kind, source_filename, status, created_at, updated_at)
@@ -101,8 +100,6 @@ def _insert_memo_and_job(db_path: Path, memo_id: str) -> str:
             (str(uuid.uuid4()), memo_id, now),
         )
         conn.commit()
-    finally:
-        conn.close()
     return memo_id
 
 
@@ -521,12 +518,11 @@ class TestPersistTranscript:
         with patch("app.services.transcription.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], segments, tmp_db)
 
-        conn = get_connection(tmp_db)
-        rows = conn.execute(
-            "SELECT ordinal, start_ms, end_ms, text, confidence FROM segments WHERE memo_id = ? ORDER BY ordinal",
-            (memo_id,),
-        ).fetchall()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            rows = conn.execute(
+                "SELECT ordinal, start_ms, end_ms, text, confidence FROM segments WHERE memo_id = ? ORDER BY ordinal",
+                (memo_id,),
+            ).fetchall()
 
         assert len(rows) == 2
         assert rows[0][0] == 1  # ordinal
@@ -542,11 +538,10 @@ class TestPersistTranscript:
         with patch("app.services.transcription.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], [{"start_ms": 0, "end_ms": 100, "text": "t", "confidence": 1.0}], tmp_db)
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute(
-            "SELECT status, transcript_revision, speaker_count FROM memos WHERE id = ?", (memo_id,)
-        ).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute(
+                "SELECT status, transcript_revision, speaker_count FROM memos WHERE id = ?", (memo_id,)
+            ).fetchone()
 
         assert memo[0] == "completed"
         assert memo[1] == 1
@@ -563,9 +558,8 @@ class TestPersistTranscript:
             # Second persist (retry scenario)
             persist_transcript(memo_id, [], [{"start_ms": 0, "end_ms": 100, "text": "new", "confidence": 0.9}], tmp_db)
 
-        conn = get_connection(tmp_db)
-        rows = conn.execute("SELECT text FROM segments WHERE memo_id = ?", (memo_id,)).fetchall()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            rows = conn.execute("SELECT text FROM segments WHERE memo_id = ?", (memo_id,)).fetchall()
 
         assert len(rows) == 1  # Not duplicated
         assert rows[0][0] == "new"
@@ -583,12 +577,11 @@ class TestPersistTranscript:
         with patch("app.services.transcription.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], segments, tmp_db)
 
-        conn = get_connection(tmp_db)
-        rows = conn.execute(
-            "SELECT ordinal, text FROM segments WHERE memo_id = ? ORDER BY ordinal",
-            (memo_id,),
-        ).fetchall()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            rows = conn.execute(
+                "SELECT ordinal, text FROM segments WHERE memo_id = ? ORDER BY ordinal",
+                (memo_id,),
+            ).fetchall()
 
         assert len(rows) == 5
         for i, row in enumerate(rows):

@@ -440,11 +440,11 @@ class TestCentralizedConfig:
 class TestDBConnectionDeduplication:
     """Single source of DB connection helpers in db/__init__.py."""
 
-    def test_db_module_has_get_connection(self):
-        """db/__init__.py provides get_connection."""
-        from app.db import get_connection
+    def test_db_module_has_db_connection(self):
+        """db/__init__.py provides db_connection."""
+        from app.db import db_connection
 
-        assert callable(get_connection)
+        assert callable(db_connection)
 
     def test_dependencies_no_longer_has_get_db_connection(self):
         """core/dependencies.py no longer exports get_db_connection."""
@@ -452,19 +452,16 @@ class TestDBConnectionDeduplication:
 
         assert not hasattr(deps, "get_db_connection")
 
-    def test_get_connection_works(self, tmp_path):
-        """get_connection returns a working SQLite connection."""
-        from app.db import get_connection
+    def test_db_connection_works(self, tmp_path):
+        """db_connection context manager provides a working SQLite connection."""
+        from app.db import db_connection
 
         db_path = tmp_path / "test.db"
-        conn = get_connection(db_path)
-        try:
+        with db_connection(db_path) as conn:
             result = conn.execute("PRAGMA journal_mode").fetchone()
             assert result[0] == "wal"
             result = conn.execute("PRAGMA foreign_keys").fetchone()
             assert result[0] == 1
-        finally:
-            conn.close()
 
 
 # ---------------------------------------------------------------------------

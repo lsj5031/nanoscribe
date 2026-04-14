@@ -17,7 +17,7 @@ os.environ.setdefault("NANOSCRIBE_DATA_DIR", "/tmp/nanoscribe-test-jobs")
 os.environ.setdefault("NANOSCRIBE_STATIC_DIR", "/tmp/nanoscribe-test-static")
 
 from app.core.config import get_settings
-from app.db import get_connection
+from app.db import db_connection
 from app.db.migrate import run_migrations
 from app.services import jobs as jobs_service
 
@@ -44,8 +44,7 @@ def _now_iso() -> str:
 def _insert_memo(db_path: Path, memo_id: str | None = None, status: str = "queued") -> str:
     memo_id = memo_id or str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO memos (id, title, source_kind, source_filename, status, created_at, updated_at)
@@ -54,8 +53,6 @@ def _insert_memo(db_path: Path, memo_id: str | None = None, status: str = "queue
             (memo_id, status, now, now),
         )
         conn.commit()
-    finally:
-        conn.close()
     return memo_id
 
 
@@ -74,8 +71,7 @@ def _insert_job(
 ) -> str:
     job_id = job_id or str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO jobs
@@ -98,8 +94,6 @@ def _insert_job(
             ),
         )
         conn.commit()
-    finally:
-        conn.close()
     return job_id
 
 
@@ -113,12 +107,10 @@ class TestJobCreation:
         memo_id = _insert_memo(tmp_db)
         job_id = _insert_job(tmp_db, memo_id)
 
-        conn = get_connection(tmp_db)
-        row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
-        conn.close()
-
-        row_dict = dict(zip(col_names, row))
+        with db_connection(tmp_db) as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            col_names = [desc[0] for desc in conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).description]
+            row_dict = dict(zip(col_names, row))
         assert row_dict["job_type"] == "transcribe"
         assert row_dict["status"] == "queued"
         assert row_dict["progress"] == 0.0
@@ -353,10 +345,9 @@ class TestAttemptCount:
         _insert_job(tmp_db, memo_id, status="failed", attempt_count=1, error_code="ASR_FAILED", error_message="test")
 
         # Update memo to failed
-        conn = get_connection(tmp_db)
-        conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
-        conn.commit()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
+            conn.commit()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
         assert new_job is not None
@@ -367,10 +358,9 @@ class TestAttemptCount:
         memo_id = _insert_memo(tmp_db, status="failed")
         _insert_job(tmp_db, memo_id, status="failed", attempt_count=2, error_code="ASR_FAILED", error_message="test")
 
-        conn = get_connection(tmp_db)
-        conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
-        conn.commit()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
+            conn.commit()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
         assert new_job is not None
@@ -440,16 +430,14 @@ class TestTimestamps:
         memo_id = _insert_memo(tmp_db)
         job_id = _insert_job(tmp_db, memo_id)
 
-        conn = get_connection(tmp_db)
-        original = conn.execute("SELECT created_at FROM jobs WHERE id = ?", (job_id,)).fetchone()[0]
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            original = conn.execute("SELECT created_at FROM jobs WHERE id = ?", (job_id,)).fetchone()[0]
 
         # Transition the job
         jobs_service.transition_job(tmp_db, job_id, "preprocessing")
 
-        conn = get_connection(tmp_db)
-        after = conn.execute("SELECT created_at FROM jobs WHERE id = ?", (job_id,)).fetchone()[0]
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            after = conn.execute("SELECT created_at FROM jobs WHERE id = ?", (job_id,)).fetchone()[0]
 
         assert original == after
 
@@ -466,9 +454,8 @@ class TestMemoMetadata:
 
         jobs_service.transition_job(tmp_db, job_id, "completed")
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT status, transcript_revision FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute("SELECT status, transcript_revision FROM memos WHERE id = ?", (memo_id,)).fetchone()
 
         assert memo[0] == "completed"
         assert memo[1] == 1
@@ -479,9 +466,8 @@ class TestMemoMetadata:
 
         jobs_service.fail_job(tmp_db, job_id, "ASR_FAILED", "model error")
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
 
         assert memo[0] == "failed"
 
@@ -491,9 +477,8 @@ class TestMemoMetadata:
 
         jobs_service.cancel_job(tmp_db, job_id)
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
 
         assert memo[0] == "cancelled"
 
@@ -533,16 +518,17 @@ class TestRetryPreservesData:
         memo_id = _insert_memo(tmp_db, status="failed")
         _insert_job(tmp_db, memo_id, status="failed", attempt_count=1, error_code="ASR_FAILED", error_message="test")
 
-        conn = get_connection(tmp_db)
-        conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
-        conn.commit()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            conn.execute("UPDATE memos SET status = 'failed' WHERE id = ?", (memo_id,))
+            conn.commit()
 
         jobs_service.retry_memo(tmp_db, memo_id)
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT title, source_kind, source_filename FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute(
+                "SELECT title, source_kind, source_filename FROM memos WHERE id = ?",
+                (memo_id,),
+            ).fetchone()
 
         assert memo[0] == "Test"
         assert memo[1] == "upload"
@@ -708,9 +694,8 @@ class TestTranscriptRevision:
 
         jobs_service.transition_job(tmp_db, job_id, "completed")
 
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT transcript_revision FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute("SELECT transcript_revision FROM memos WHERE id = ?", (memo_id,)).fetchone()
 
         assert memo[0] == 1
 
@@ -730,10 +715,9 @@ class TestRetryAfterCancel:
             attempt_count=1,
         )
 
-        conn = get_connection(tmp_db)
-        conn.execute("UPDATE memos SET status = 'cancelled' WHERE id = ?", (memo_id,))
-        conn.commit()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            conn.execute("UPDATE memos SET status = 'cancelled' WHERE id = ?", (memo_id,))
+            conn.commit()
 
         new_job = jobs_service.retry_memo(tmp_db, memo_id)
         assert new_job is not None
@@ -761,9 +745,8 @@ class TestWorkerResilience:
         assert job["error_code"] == "ASR_FAILED"
 
         # Memo should be failed
-        conn = get_connection(tmp_db)
-        memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
-        conn.close()
+        with db_connection(tmp_db) as conn:
+            memo = conn.execute("SELECT status FROM memos WHERE id = ?", (memo_id,)).fetchone()
         assert memo[0] == "failed"
 
         # Next queued job should still be pickable

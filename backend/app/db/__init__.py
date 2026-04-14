@@ -10,18 +10,6 @@ from typing import Iterator
 from app.db.migrate import run_migrations  # noqa: F401
 
 
-def get_connection(db_path: str | Path) -> sqlite3.Connection:
-    """Return a SQLite connection with WAL mode and foreign keys enabled.
-
-    Caller is responsible for closing the connection.
-    Prefer ``db_connection`` for automatic cleanup via context manager.
-    """
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
-
-
 @contextmanager
 def db_connection(
     db_path: str | Path,

@@ -11,7 +11,7 @@ import pytest
 os.environ.setdefault("NANOSCRIBE_DATA_DIR", "/tmp/nanoscribe-test-diarization")
 os.environ.setdefault("NANOSCRIBE_STATIC_DIR", "/tmp/nanoscribe-test-static")
 
-from app.db import get_connection
+from app.db import db_connection
 from app.db.migrate import run_migrations
 from app.services.diarization import create_speaker_rows
 from app.services.diarization_merge import merge_diarization
@@ -38,8 +38,7 @@ def _now_iso() -> str:
 def _insert_memo(db_path: Path, memo_id: str | None = None) -> str:
     memo_id = memo_id or str(uuid.uuid4())
     now = _now_iso()
-    conn = get_connection(db_path)
-    try:
+    with db_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO memos (id, title, source_kind, source_filename, status, created_at, updated_at)
@@ -48,8 +47,6 @@ def _insert_memo(db_path: Path, memo_id: str | None = None) -> str:
             (memo_id, now, now),
         )
         conn.commit()
-    finally:
-        conn.close()
     return memo_id
 
 
@@ -162,14 +159,11 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, segments)
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             rows = conn.execute(
                 "SELECT speaker_key, display_name, color FROM memo_speakers WHERE memo_id = ? ORDER BY speaker_key",
                 (memo_id,),
             ).fetchall()
-        finally:
-            conn.close()
 
         assert len(rows) == 2
         keys = {r[0] for r in rows}
@@ -186,14 +180,11 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, segments)
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             rows = conn.execute(
                 "SELECT speaker_key, display_name FROM memo_speakers WHERE memo_id = ? ORDER BY rowid",
                 (memo_id,),
             ).fetchall()
-        finally:
-            conn.close()
 
         # spk1 appears first → Speaker 1, spk0 appears second → Speaker 2
         assert rows[0] == ("spk1", "Speaker 1")
@@ -210,11 +201,8 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, segments)
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             count = conn.execute("SELECT speaker_count FROM memos WHERE id = ?", (memo_id,)).fetchone()[0]
-        finally:
-            conn.close()
 
         assert count == 3
 
@@ -224,11 +212,8 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, [])
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             rows = conn.execute("SELECT * FROM memo_speakers WHERE memo_id = ?", (memo_id,)).fetchall()
-        finally:
-            conn.close()
 
         assert len(rows) == 0
 
@@ -242,14 +227,11 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, segments)
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             rows = conn.execute(
                 "SELECT color FROM memo_speakers WHERE memo_id = ? ORDER BY rowid",
                 (memo_id,),
             ).fetchall()
-        finally:
-            conn.close()
 
         assert rows[0][0] == "#00d4ff"
         assert rows[1][0] == "#f472b6"
@@ -261,14 +243,11 @@ class TestCreateSpeakerRows:
 
         create_speaker_rows(tmp_db, memo_id, segments)
 
-        conn = get_connection(tmp_db)
-        try:
+        with db_connection(tmp_db) as conn:
             rows = conn.execute(
                 "SELECT speaker_key, color FROM memo_speakers WHERE memo_id = ? ORDER BY rowid",
                 (memo_id,),
             ).fetchall()
-        finally:
-            conn.close()
 
         assert len(rows) == 8
         # First and 7th speaker should share same color (index 0 and 6 → wraps at 6 colors)
