@@ -53,7 +53,7 @@ def get_capabilities() -> dict:
         "asr_model": "FunAudioLLM/Fun-ASR-Nano-2512",
         "vad": "fsmn-vad",
         "timestamps": True,
-        "speaker_diarization": False,  # Enabled when 3D-Speaker is installed (M6)
+        "speaker_diarization": True,
         "hotwords": True,
         "language_auto_detect": True,
         "recording": True,

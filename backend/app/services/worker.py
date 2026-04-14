@@ -6,7 +6,7 @@ VAL-JOB-018: Progress updates throttled.
 
 The worker runs as an asyncio background task. It polls the database for
 queued jobs and processes them sequentially through the full pipeline:
-  queued → preprocessing → transcribing → finalizing → completed
+  queued → preprocessing → transcribing → diarizing → finalizing → completed
 """
 
 from __future__ import annotations
@@ -184,6 +184,31 @@ class WorkerLoop:
             self._do_cancel(job_id)
             return
 
+        # ── Stage 2b: Diarization (optional) ────────────────────────
+        enable_diarization = bool(job.get("enable_diarization"))
+        if enable_diarization:
+            job_service.transition_job(self.db_path, job_id, "diarizing")
+            sse.publish_stage(job_id, "diarizing")
+            job_service.update_progress(self.db_path, job_id, 0.75)
+
+            try:
+                from app.services.diarization import run_diarization
+                from app.services.diarization_merge import merge_diarization
+
+                diarization_segments = await asyncio.to_thread(run_diarization, normalized_path)
+
+                if diarization_segments:
+                    result["segments"] = merge_diarization(result["segments"], diarization_segments)
+
+                job_service.update_progress(self.db_path, job_id, 0.85)
+                sse.publish_progress(job_id, 0.85, "diarizing")
+            except Exception as exc:
+                logger.warning("Diarization failed for job %s, continuing without speakers: %s", job_id, exc)
+
+        if self.is_cancelled(job_id):
+            self._do_cancel(job_id)
+            return
+
         # ── Stage 3: Finalizing ─────────────────────────────────────
         job_service.transition_job(self.db_path, job_id, "finalizing")
         sse.publish_stage(job_id, "finalizing")
@@ -202,6 +227,15 @@ class WorkerLoop:
             job_service.fail_job(self.db_path, job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
             sse.publish_failed(job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
             return
+
+        # Create speaker rows if diarization was applied
+        if enable_diarization:
+            try:
+                from app.services.diarization import create_speaker_rows
+
+                await asyncio.to_thread(create_speaker_rows, self.db_path, memo_id, result["segments"])
+            except Exception as exc:
+                logger.warning("Failed to create speaker rows for job %s: %s", job_id, exc)
 
         job_service.update_progress(self.db_path, job_id, 0.95)
 

@@ -435,7 +435,7 @@ def persist_transcript(
                 "end_ms": seg["end_ms"],
                 "text": seg["text"],
                 "confidence": seg["confidence"],
-                "speaker_key": None,
+                "speaker_key": seg.get("speaker_key"),
             }
         )
 
@@ -454,8 +454,8 @@ def persist_transcript(
                 """
                 INSERT INTO segments
                     (id, memo_id, ordinal, start_ms, end_ms, text,
-                     confidence, edited, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                     speaker_key, confidence, edited, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """,
                 (
                     seg_id,
@@ -464,6 +464,7 @@ def persist_transcript(
                     seg["start_ms"],
                     seg["end_ms"],
                     seg["text"],
+                    seg.get("speaker_key"),
                     seg["confidence"],
                     now,
                     now,

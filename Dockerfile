@@ -20,6 +20,13 @@ RUN /app/venv/bin/pip install --no-cache-dir \
     modelscope \
     tiktoken
 
+# 3D-Speaker for speaker diarization
+RUN apt-get update && apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/modelscope/3D-Speaker.git /opt/3D-Speaker && \
+    cd /opt/3D-Speaker && \
+    /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+
 RUN /app/venv/bin/pip install --no-cache-dir \
     ruff \
     ty \
