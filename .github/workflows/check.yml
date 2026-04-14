@@ -1,0 +1,28 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dev image
+        run: make build-dev
+
+      - name: Start container
+        run: docker compose up -d
+
+      - name: Wait for container readiness
+        run: sleep 5
+
+      - name: Backend checks
+        run: make backend-check
+
+      - name: Frontend checks
+        run: make frontend-check

@@ -16,10 +16,14 @@
   let {
     segment,
     isCurrent = false,
+    isHovered = false,
+    searchQuery = '',
     onclick
   }: {
     segment: Segment;
     isCurrent: boolean;
+    isHovered?: boolean;
+    searchQuery?: string;
     onclick: () => void;
   } = $props();
 
@@ -42,14 +46,12 @@
   let renameText: string = $state('');
 
   $effect(() => {
-    // Sync local text when segment text changes externally (e.g., conflict refresh)
     localText = segment.text;
   });
 
   $effect(() => {
     if (isEditing && textarea) {
       textarea.focus();
-      // Auto-resize textarea
       _resizeTextarea();
     }
   });
@@ -84,7 +86,6 @@
   }
 
   function handleBlur() {
-    // Show saved indicator briefly
     if (segment.edited) {
       showSaved = true;
       setTimeout(() => {
@@ -98,7 +99,6 @@
     if (e.key === 'Escape') {
       textarea?.blur();
     }
-    // Prevent Space from propagating to global handler
     if (e.key === ' ') {
       e.stopPropagation();
     }
@@ -143,6 +143,31 @@
       }
     }
   }
+
+  // Split text into parts for search highlighting
+  const textParts = $derived.by(() => {
+    if (!searchQuery || isEditing) {
+      return [{ text: segment.text, highlight: false }];
+    }
+    const lower = segment.text.toLowerCase();
+    const parts: { text: string; highlight: boolean }[] = [];
+    let lastIdx = 0;
+    let pos = 0;
+    while (pos < lower.length) {
+      const idx = lower.indexOf(searchQuery, pos);
+      if (idx === -1) break;
+      if (idx > lastIdx) {
+        parts.push({ text: segment.text.slice(lastIdx, idx), highlight: false });
+      }
+      parts.push({ text: segment.text.slice(idx, idx + searchQuery.length), highlight: true });
+      lastIdx = idx + searchQuery.length;
+      pos = lastIdx;
+    }
+    if (lastIdx < segment.text.length) {
+      parts.push({ text: segment.text.slice(lastIdx), highlight: false });
+    }
+    return parts;
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -150,7 +175,9 @@
 <div
   class="w-full cursor-pointer border-l-2 px-4 py-2.5 text-left transition-colors {isCurrent
     ? 'border-accent bg-accent/5'
-    : 'border-transparent hover:bg-surface-700'}"
+    : isHovered
+      ? 'border-transparent bg-surface-700/50'
+      : 'border-transparent hover:bg-surface-700'}"
   role="option"
   aria-selected={isCurrent}
   tabindex="-1"
@@ -261,7 +288,13 @@
             : 'text-text-secondary'}"
           onclick={handleTextClick}
         >
-          {segment.text || '...'}
+          {#each textParts as part}
+            {#if part.highlight}
+              <mark class="rounded-sm bg-accent/30 text-inherit">{part.text}</mark>
+            {:else}
+              {part.text}
+            {/if}
+          {/each}
         </p>
       {/if}
     </div>

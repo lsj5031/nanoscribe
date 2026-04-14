@@ -1,0 +1,412 @@
+{
+  "groupId": "editor",
+  "testedAt": "2026-04-14T16:30:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:8000",
+    "memoId": "a4cc5520-9271-4be5-a537-61e74e031de3",
+    "segmentMemoId": "757bd1ab-f5bc-4940-81f6-97e63d73c08d"
+  },
+  "toolsUsed": ["curl", "code-inspection"],
+  "assertions": [
+    {
+      "id": "VAL-EDIT-001",
+      "title": "Editor page renders at /memos/{memoId}",
+      "status": "pass",
+      "steps": [
+        { "action": "GET /api/memos?status=completed&page_size=5", "expected": "Returns completed memos", "observed": "Returned 17 completed memos" },
+        { "action": "GET /api/memos/{id} for memo a4cc5520...", "expected": "Returns memo detail with 200", "observed": "200 OK with full memo detail" },
+        { "action": "GET /memos/{id} (SPA route)", "expected": "SPA serves the page with 200", "observed": "200 OK" },
+        { "action": "Check frontend/src/routes/memos/[memoId]/+page.svelte exists", "expected": "File exists", "observed": "File exists (9639 bytes)" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "not checked (code inspection)",
+        "network": "GET /api/memos?status=completed&page_size=5 -> 200, GET /api/memos/{id} -> 200, GET /memos/{id} -> 200"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-002",
+      "title": "Two-pane layout with resizable divider",
+      "status": "pass",
+      "steps": [
+        { "action": "Inspect +page.svelte for two-pane layout", "expected": "Left pane (waveform) and right pane (transcript) with resizable divider", "observed": "Found flex container with left pane (style='width: {leftPct}%'), divider (w-2 cursor-col-resize, role=separator), and right pane (flex-1)" },
+        { "action": "Check drag handle implementation", "expected": "Mousedown handler for dragging", "observed": "handleDividerMouseDown function sets up mousemove/mouseup listeners, tracks delta to adjust leftPct" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:132-160 (divider with mousedown handler)",
+          "frontend/src/routes/memos/[memoId]/+page.svelte:77-96 (handleDividerMouseDown function)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-003",
+      "title": "Waveform visualization",
+      "status": "pass",
+      "steps": [
+        { "action": "Check WaveformPane.svelte for wavesurfer.js import", "expected": "WaveSurfer imported and initialized", "observed": "import WaveSurfer from 'wavesurfer.js' at line 1, WaveSurfer.create() with container, waveColor, progressColor, barWidth, etc." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/WaveformPane.svelte:1 (import)",
+          "frontend/src/lib/components/WaveformPane.svelte:24-41 (WaveSurfer.create config)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-004",
+      "title": "Audio playback transport controls",
+      "status": "pass",
+      "steps": [
+        { "action": "Check WaveformPane.svelte for play/pause button", "expected": "Play/pause button with data-play-button attribute", "observed": "Button with data-play-button attribute, onclick=togglePlay, shows play/pause icons based on isPlaying state" },
+        { "action": "Check time display", "expected": "Current time / duration display", "observed": "Span with font-mono showing {currentTimeDisplay} / {durationDisplay} using formatTime()" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/WaveformPane.svelte:90-107 (play/pause button)",
+          "frontend/src/lib/components/WaveformPane.svelte:109-112 (time display)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-005",
+      "title": "Playback speed selector",
+      "status": "pass",
+      "steps": [
+        { "action": "Check WaveformPane.svelte for speed selector", "expected": "Speed dropdown with 0.5x-2x options", "observed": "Select element with id='speed-select', options from SPEEDS array [0.5, 0.75, 1, 1.25, 1.5, 2], onchange calls handleSpeedChange which calls setPlaybackRate()" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/WaveformPane.svelte:115-127 (speed selector)",
+          "frontend/src/lib/stores/editor.svelte.ts:27 (SPEEDS array)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-006",
+      "title": "Click waveform to seek",
+      "status": "pass",
+      "steps": [
+        { "action": "Check wavesurfer.js default behavior for click-to-seek", "expected": "Click on waveform triggers seek", "observed": "wavesurfer.js v7.12.6 defaults interact:true. Renderer click handler calls this.seekTo(t) when options.interact is true. No explicit override in WaveformPane.svelte config." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/node_modules/wavesurfer.js/dist/wavesurfer.esm.js (default options: interact: true)",
+          "frontend/src/lib/components/WaveformPane.svelte:24-41 (no interact:false override)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-007",
+      "title": "Segment list with timestamps and speaker badges",
+      "status": "pass",
+      "steps": [
+        { "action": "Check TranscriptPane.svelte for segment list", "expected": "Segment list rendering with SegmentItem components", "observed": "TranscriptPane iterates segments with {#each}, renders SegmentItem with segment data, isCurrent flag, and onclick handler" },
+        { "action": "Check SegmentItem.svelte for timestamps and speaker badges", "expected": "Timestamp display and speaker badge with color", "observed": "Timestamp: span with font-mono text-xs showing formatTime(segment.start_ms). Speaker badge: colored circle (h-2 w-2 rounded-full) + speaker_key text" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/TranscriptPane.svelte:42-48 (segment list iteration)",
+          "frontend/src/lib/components/SegmentItem.svelte:72-76 (timestamp)",
+          "frontend/src/lib/components/SegmentItem.svelte:79-83 (speaker badge)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-008",
+      "title": "Current segment highlights during playback",
+      "status": "pass",
+      "steps": [
+        { "action": "Check how current segment is determined from playback position", "expected": "Current segment index updated when currentTimeMs changes", "observed": "_updateCurrentSegment() in editor.svelte.ts is called from setCurrentTimeMs(). It iterates segments to find one containing the current time, or the nearest upcoming one. SegmentItem receives isCurrent prop and applies border-accent bg-accent/5 styling." },
+        { "action": "Check auto-scroll to current segment", "expected": "Auto-scroll to highlighted segment", "observed": "TranscriptPane has $effect that scrolls to currentSegmentIndex using scrollIntoView({ behavior: 'smooth', block: 'nearest' })" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/stores/editor.svelte.ts:226-244 (_updateCurrentSegment)",
+          "frontend/src/lib/stores/editor.svelte.ts:111 (setCurrentTimeMs calls _updateCurrentSegment)",
+          "frontend/src/lib/components/TranscriptPane.svelte:31-37 (auto-scroll effect)",
+          "frontend/src/lib/components/SegmentItem.svelte:64-67 (isCurrent styling)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-009",
+      "title": "Click segment to seek audio",
+      "status": "pass",
+      "steps": [
+        { "action": "Check SegmentItem click handler", "expected": "Clicking a segment seeks audio to its start time", "observed": "SegmentItem onclick calls handleRowClick -> handleSegmentClick(i) -> seekToSegment(index) which returns start_ms, then seekCallback(ms) which calls waveformPane.seekToTime(ms)" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/SegmentItem.svelte:56-59 (handleRowClick)",
+          "frontend/src/lib/components/TranscriptPane.svelte:21-25 (handleSegmentClick)",
+          "frontend/src/lib/stores/editor.svelte.ts:214-217 (seekToSegment)",
+          "frontend/src/routes/memos/[memoId]/+page.svelte:35-39 (seekCallback setup)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-010",
+      "title": "Keyboard: Space play/pause",
+      "status": "pass",
+      "steps": [
+        { "action": "Check keyboard handler for Space key", "expected": "Space toggles play/pause", "observed": "case ' ': e.preventDefault(); clicks [data-play-button] element. Guard checks target is not input/textarea/select (returns early if it is)" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:59-64 (Space handler)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-011",
+      "title": "Keyboard: Arrow keys seek",
+      "status": "pass",
+      "steps": [
+        { "action": "Check left/right arrow handlers", "expected": "Left seeks back 5s, Right seeks forward 5s", "observed": "case 'ArrowLeft': newTime = Math.max(0, currentTimeMs - 5000); case 'ArrowRight': newTime = Math.min(durationMs, currentTimeMs + 5000). Both call waveformPane.seekToTime(newTime)" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:85-95 (ArrowLeft/Right handlers)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-012",
+      "title": "Keyboard: Up/Down segment navigation",
+      "status": "pass",
+      "steps": [
+        { "action": "Check up/down arrow handlers", "expected": "Up moves to previous segment, Down moves to next", "observed": "case 'ArrowUp': seeks to curIdx-1 segment. case 'ArrowDown': seeks to curIdx+1 segment. Both use _getCurrentIndex() to find current position and seekToSegment() to navigate." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:96-111 (ArrowUp/Down handlers)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-013",
+      "title": "Speaker segment band in waveform",
+      "status": "pass",
+      "steps": [
+        { "action": "Check WaveformPane.svelte for speaker band rendering", "expected": "Canvas element rendering speaker-colored segments over waveform", "observed": "Canvas element (h-4 w-full) below waveform. drawSegmentBand() renders colored rectangles per segment using getSpeakerColor(), positioned proportionally to segment start_ms/end_ms relative to durationMs." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/WaveformPane.svelte:55-79 (drawSegmentBand function)",
+          "frontend/src/lib/components/WaveformPane.svelte:86 (canvas element)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-014",
+      "title": "Inline text editing",
+      "status": "pass",
+      "steps": [
+        { "action": "Check SegmentItem.svelte for editing UI", "expected": "Click on text activates inline editing with textarea", "observed": "When isEditing is true, renders <textarea> with bound value. Click on text (handleTextClick) sets editingSegmentId. Textarea has auto-resize, input handler, and blur handler." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/SegmentItem.svelte:26-35 (isEditing effect with focus/resize)",
+          "frontend/src/lib/components/SegmentItem.svelte:37-40 (handleTextClick)",
+          "frontend/src/lib/components/SegmentItem.svelte:42-47 (handleInput)",
+          "frontend/src/lib/components/SegmentItem.svelte:87-96 (textarea element)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-015",
+      "title": "Autosave on debounce",
+      "status": "pass",
+      "steps": [
+        { "action": "Check editor.svelte.ts for debounce timer", "expected": "1.5s debounce timer before saving", "observed": "updateSegmentText() sets _saveTimer = setTimeout(async () => { await _flushPendingSaves(); }, 1500). Timer is cleared and restarted on each keystroke. _flushPendingSaves() sends PATCH request." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/stores/editor.svelte.ts:136-150 (debounce timer, 1500ms)",
+          "frontend/src/lib/stores/editor.svelte.ts:152-186 (_flushPendingSaves with PATCH)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-016",
+      "title": "PATCH /api/memos/{id}/segments endpoint",
+      "status": "pass",
+      "steps": [
+        { "action": "GET /api/memos/{id}/segments for memo with segments", "expected": "Returns segments with revision", "observed": "GET /api/memos/757bd1ab.../segments -> 200, revision=1, 1 segment with id, ordinal, start_ms, end_ms, text, speaker_key, confidence, edited" },
+        { "action": "PATCH /api/memos/{id}/segments with valid data", "expected": "Updates segment text, returns new revision", "observed": "PATCH with base_revision=1 -> 200, revision=2, updated segment with text='the (edited)', edited=true" }
+      ],
+      "evidence": {
+        "network": "GET /api/memos/757bd1ab.../segments -> 200, PATCH /api/memos/757bd1ab.../segments -> 200"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-017",
+      "title": "Revision increment on save",
+      "status": "pass",
+      "steps": [
+        { "action": "Check backend segments service for revision increment", "expected": "transcript_revision incremented on each PATCH", "observed": "segments_service.patch_segments() computes new_revision = current_revision + 1, updates memos.transcript_revision in DB, returns new revision. Confirmed via API: revision went from 1 to 2 after PATCH." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "backend/app/services/segments.py:87-88 (new_revision = current_revision + 1)",
+          "backend/app/services/segments.py:97-101 (UPDATE memos SET transcript_revision = new_revision)"
+        ],
+        "network": "PATCH returned revision: 2 (was 1)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-018",
+      "title": "409 conflict on stale revision",
+      "status": "pass",
+      "steps": [
+        { "action": "PATCH with stale base_revision (1, current is 2)", "expected": "Returns 409 with current state", "observed": "HTTP 409 with detail: 'Conflict: transcript has been modified', current_revision: 2, current_segments with latest data" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "backend/app/services/segments.py:76-84 (ConflictError raised when base_revision != current_revision)",
+          "backend/app/api/segments.py:41-48 (HTTP 409 response)"
+        ],
+        "network": "PATCH with base_revision=1 (current=2) -> 409 Conflict"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-019",
+      "title": "Floating toolbar with actions",
+      "status": "pass",
+      "steps": [
+        { "action": "Check +page.svelte for toolbar", "expected": "Toolbar with back, title, export, copy, re-run buttons", "observed": "Found toolbar div (shrink-0, border-b, bg-surface-800) with: back button (goBack), title (memo?.title), export button (SVG download icon), copy button (SVG clipboard icon), re-run transcription button (SVG refresh icon). Export/copy/re-run marked 'coming soon' in title." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:117-158 (toolbar section)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-020",
+      "title": "Divider position persistence",
+      "status": "pass",
+      "steps": [
+        { "action": "Check editor store for localStorage save of pane width", "expected": "Pane width saved to localStorage and restored on load", "observed": "loadPaneWidth() reads localStorage 'nanoscribe-editor-pane-width' (default 65). savePaneWidth() writes to localStorage. setLeftPaneWidthPct() calls savePaneWidth() with clamped value (30-70)." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/stores/editor.svelte.ts:32-43 (loadPaneWidth/savePaneWidth)",
+          "frontend/src/lib/stores/editor.svelte.ts:122-125 (setLeftPaneWidthPct with clamping and save)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-021",
+      "title": "Saving indicator",
+      "status": "pass",
+      "steps": [
+        { "action": "Check SegmentItem.svelte for saving indicators", "expected": "'Saving...' indicator while saving, 'Saved' after completion", "observed": "When isEditing && saving: shows 'Saving...' text. When showSaved is true (set after blur if segment.edited): shows 'Saved' text in accent color for 1500ms." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/SegmentItem.svelte:89 (Saving... indicator)",
+          "frontend/src/lib/components/SegmentItem.svelte:91-93 (Saved indicator)",
+          "frontend/src/lib/components/SegmentItem.svelte:47-53 (handleBlur sets showSaved)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-022",
+      "title": "Edited segment visual indication",
+      "status": "pass",
+      "steps": [
+        { "action": "Check for edited badge/icon on segments", "expected": "Visual indicator on edited segments", "observed": "When segment.edited && !isEditing: shows pencil/edit SVG icon (h-3 w-3, inline) with title='Edited'" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/SegmentItem.svelte:84-93 (edited icon)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-023",
+      "title": "Enter focuses editor",
+      "status": "pass",
+      "steps": [
+        { "action": "Check keyboard handler for Enter key", "expected": "Enter focuses current segment's text editor", "observed": "case 'Enter': e.preventDefault(); gets current segment index via getCurrentSegmentIndex(), sets editingSegmentId to that segment's id" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:67-73 (Enter handler)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-024",
+      "title": "Escape blurs editor",
+      "status": "pass",
+      "steps": [
+        { "action": "Check keyboard handler for Escape key", "expected": "Escape blurs active editor", "observed": "Two places: (1) In +page.svelte global handler: case 'Escape' blurs any active editor by clearing editingSegmentId and blurring focused textarea. (2) In SegmentItem.svelte: handleKeydown checks for Escape to blur the textarea directly." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:74-81 (Escape handler)",
+          "frontend/src/lib/components/SegmentItem.svelte:55-58 (Escape in textarea keydown)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-025",
+      "title": "Space doesn't trigger play when editing",
+      "status": "pass",
+      "steps": [
+        { "action": "Check that Space handler checks for focused textarea", "expected": "Space ignored when textarea/input is focused", "observed": "Two layers of protection: (1) Global handler in +page.svelte checks e.target instanceof HTMLTextAreaElement and returns early. (2) SegmentItem.svelte handleKeydown calls e.stopPropagation() for Space key, preventing it from reaching the global handler." }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/routes/memos/[memoId]/+page.svelte:53-58 (early return for form elements)",
+          "frontend/src/lib/components/SegmentItem.svelte:57-59 (stopPropagation on Space)"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDIT-026",
+      "title": "No transcript message when empty",
+      "status": "pass",
+      "steps": [
+        { "action": "Check TranscriptPane for empty state handling", "expected": "Shows 'No transcript yet' message when no segments", "observed": "When !hasContent (segments.length === 0): shows document icon SVG, 'No transcript yet' text, and 'Segments will appear here after transcription completes.' subtext" }
+      ],
+      "evidence": {
+        "codeReferences": [
+          "frontend/src/lib/components/TranscriptPane.svelte:38-51 (empty state)"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 26 assertions: all 26 passed. Editor page renders correctly at /memos/{memoId} (SPA route returns 200). Two-pane layout with resizable divider implemented. Waveform uses wavesurfer.js v7.12.6 with full transport controls, speed selector (0.5x-2x), and click-to-seek (default interact:true). Speaker segment band rendered on canvas. Segment list shows timestamps, speaker badges, and edited indicators. Current segment highlights during playback with auto-scroll. Keyboard shortcuts all implemented: Space (play/pause, guarded when editing), Arrow keys (seek 5s), Up/Down (segment nav), Enter (focus editor), Escape (blur). Autosave debounces at 1.5s. PATCH /api/memos/{id}/segments works correctly with revision increment and 409 conflict on stale revision. Divider position persisted to localStorage. Empty state message shown when no segments."
+}

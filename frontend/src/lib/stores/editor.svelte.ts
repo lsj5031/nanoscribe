@@ -112,6 +112,9 @@ interface EditorState {
   editingSegmentId: string | null;
   saving: boolean;
   saveError: string | null;
+  hoveredSegmentIndex: number;
+  transcriptSearchOpen: boolean;
+  zoomLevel: number;
 }
 
 let state = $state<EditorState>({
@@ -131,8 +134,21 @@ let state = $state<EditorState>({
   isDraggingDivider: false,
   editingSegmentId: null,
   saving: false,
-  saveError: null
+  saveError: null,
+  hoveredSegmentIndex: -1,
+  transcriptSearchOpen: false,
+  zoomLevel: loadZoomLevel()
 });
+
+function loadZoomLevel(): number {
+  if (typeof localStorage === 'undefined') return 1;
+  const stored = localStorage.getItem('nanoscribe-zoom-level');
+  if (stored) {
+    const val = parseFloat(stored);
+    if (!isNaN(val) && val >= 1 && val <= 8) return val;
+  }
+  return 1;
+}
 
 // Getters
 export function getMemoId(): string {
@@ -189,6 +205,15 @@ export function getSaveError(): string | null {
 export function getSpeeds(): PlaybackSpeed[] {
   return SPEEDS;
 }
+export function getHoveredSegmentIndex(): number {
+  return state.hoveredSegmentIndex;
+}
+export function getTranscriptSearchOpen(): boolean {
+  return state.transcriptSearchOpen;
+}
+export function getZoomLevel(): number {
+  return state.zoomLevel;
+}
 
 // Derived
 export function hasSegments(): boolean {
@@ -229,6 +254,26 @@ export function setPlaybackSpeed(speed: PlaybackSpeed): void {
 
 export function setEditingSegmentId(id: string | null): void {
   state.editingSegmentId = id;
+}
+
+export function setHoveredSegmentIndex(i: number): void {
+  state.hoveredSegmentIndex = i;
+}
+
+export function setTranscriptSearchOpen(open: boolean): void {
+  state.transcriptSearchOpen = open;
+}
+
+export function toggleTranscriptSearch(): void {
+  state.transcriptSearchOpen = !state.transcriptSearchOpen;
+}
+
+export function setZoomLevel(level: number): void {
+  const clamped = Math.max(1, Math.min(8, level));
+  state.zoomLevel = clamped;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('nanoscribe-zoom-level', String(clamped));
+  }
 }
 
 export function setLeftPaneWidthPct(pct: number): void {
@@ -417,9 +462,23 @@ export async function initEditor(memoId: string): Promise<void> {
 }
 
 /**
+ * Get the full transcript text as a formatted string for copying.
+ */
+export function getFullTranscriptText(): string {
+  return state.segments
+    .map((s) => {
+      const ts = formatTime(s.start_ms);
+      const speaker = getSpeakerDisplayName(s.speaker_key);
+      const prefix = speaker ? `[${ts}] ${speaker}: ` : `[${ts}] `;
+      return prefix + s.text;
+    })
+    .join('\n');
+}
+
+/**
  * Connect SSE for the active job in the editor (for refresh resilience).
  */
-function connectEditorSSE(jobId: string): void {
+export function connectEditorSSE(jobId: string): void {
   disconnectEditorSSE();
 
   _editorEventSource = new EventSource(`/api/jobs/${jobId}/events`);
