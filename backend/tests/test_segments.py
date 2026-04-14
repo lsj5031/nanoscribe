@@ -224,3 +224,116 @@ class TestGetAudio:
         """Returns 404 when the memo does not exist."""
         resp = client.get("/api/memos/nonexistent/audio")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/memos/{memoId}/segments
+# ---------------------------------------------------------------------------
+
+
+class TestPatchSegments:
+    """Tests for PATCH /api/memos/{memoId}/segments."""
+
+    def test_updates_segment_text_and_increments_revision(self, client: TestClient, tmp_path: Path) -> None:
+        """PATCH updates segment text, sets edited=1, and bumps revision."""
+        data = tmp_path / "data"
+        db = data / "nanoscribe.db"
+        memo_id = _insert_memo(db, transcript_revision=3)
+        seg_id = _insert_segment(db, memo_id, text="Original text")
+
+        resp = client.patch(
+            f"/api/memos/{memo_id}/segments",
+            json={"base_revision": 3, "updates": [{"segment_id": seg_id, "text": "Updated text"}]},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["memo_id"] == memo_id
+        assert body["revision"] == 4
+        assert len(body["updated_segments"]) == 1
+        seg = body["updated_segments"][0]
+        assert seg["id"] == seg_id
+        assert seg["text"] == "Updated text"
+        assert seg["edited"] is True
+
+        # Verify in DB
+        conn = sqlite3.connect(str(db))
+        row = conn.execute("SELECT text, edited FROM segments WHERE id = ?", (seg_id,)).fetchone()
+        conn.close()
+        assert row[0] == "Updated text"
+        assert row[1] == 1
+
+    def test_returns_409_when_base_revision_is_stale(self, client: TestClient, tmp_path: Path) -> None:
+        """PATCH returns 409 when base_revision doesn't match."""
+        data = tmp_path / "data"
+        db = data / "nanoscribe.db"
+        memo_id = _insert_memo(db, transcript_revision=5)
+        _insert_segment(db, memo_id, text="Hello")
+
+        resp = client.patch(
+            f"/api/memos/{memo_id}/segments",
+            json={"base_revision": 3, "updates": [{"segment_id": "any", "text": "New"}]},
+        )
+        assert resp.status_code == 409
+        body = resp.json()
+        # HTTPException wraps detail inside {"detail": ...}
+        detail = body["detail"]
+        assert detail["current_revision"] == 5
+        assert len(detail["current_segments"]) == 1
+
+    def test_returns_404_for_nonexistent_memo(self, client: TestClient) -> None:
+        """PATCH returns 404 for nonexistent memo."""
+        resp = client.patch(
+            "/api/memos/nonexistent/segments",
+            json={"base_revision": 0, "updates": [{"segment_id": "x", "text": "y"}]},
+        )
+        assert resp.status_code == 404
+
+    def test_validates_request_body_missing_fields(self, client: TestClient, tmp_path: Path) -> None:
+        """PATCH returns 422 for missing required fields."""
+        data = tmp_path / "data"
+        db = data / "nanoscribe.db"
+        memo_id = _insert_memo(db)
+
+        # Missing base_revision
+        resp = client.patch(
+            f"/api/memos/{memo_id}/segments",
+            json={"updates": [{"segment_id": "x", "text": "y"}]},
+        )
+        assert resp.status_code == 422
+
+        # Missing updates
+        resp = client.patch(
+            f"/api/memos/{memo_id}/segments",
+            json={"base_revision": 0},
+        )
+        assert resp.status_code == 422
+
+        # Empty body
+        resp = client.patch(f"/api/memos/{memo_id}/segments", json={})
+        assert resp.status_code == 422
+
+    def test_multiple_segment_updates_in_single_patch(self, client: TestClient, tmp_path: Path) -> None:
+        """PATCH can update multiple segments in a single request."""
+        data = tmp_path / "data"
+        db = data / "nanoscribe.db"
+        memo_id = _insert_memo(db, transcript_revision=1)
+        seg1 = _insert_segment(db, memo_id, ordinal=1, text="First")
+        seg2 = _insert_segment(db, memo_id, ordinal=2, start_ms=5000, end_ms=10000, text="Second")
+
+        resp = client.patch(
+            f"/api/memos/{memo_id}/segments",
+            json={
+                "base_revision": 1,
+                "updates": [
+                    {"segment_id": seg1, "text": "Updated first"},
+                    {"segment_id": seg2, "text": "Updated second"},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["revision"] == 2
+        assert len(body["updated_segments"]) == 2
+        texts = {s["id"]: s["text"] for s in body["updated_segments"]}
+        assert texts[seg1] == "Updated first"
+        assert texts[seg2] == "Updated second"

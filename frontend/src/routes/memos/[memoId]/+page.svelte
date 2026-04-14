@@ -16,8 +16,12 @@
     getCurrentTimeMs,
     getDurationMs,
     getSegments,
+    getEditingSegmentId,
+    getCurrentSegmentIndex,
     setCurrentTimeMs,
-    seekToSegment
+    seekToSegment,
+    setEditingSegmentId,
+    flushSave
   } from '$lib/stores/editor.svelte';
 
   let waveformPane: WaveformPane | undefined = $state();
@@ -64,18 +68,42 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Don't interfere with form elements (except Escape)
     if (
       e.target instanceof HTMLInputElement ||
       e.target instanceof HTMLTextAreaElement ||
       e.target instanceof HTMLSelectElement
-    )
+    ) {
+      if (e.key === 'Escape') {
+        (e.target as HTMLElement).blur();
+      }
       return;
+    }
 
     switch (e.key) {
       case ' ': {
         e.preventDefault();
         const playBtn = document.querySelector('[data-play-button]') as HTMLButtonElement | null;
         playBtn?.click();
+        break;
+      }
+      case 'Enter': {
+        e.preventDefault();
+        // Focus the current segment's text editor
+        const idx = getCurrentSegmentIndex();
+        if (idx >= 0) {
+          setEditingSegmentId(getSegments()[idx].id);
+        }
+        break;
+      }
+      case 'Escape': {
+        e.preventDefault();
+        // Blur any active editor
+        if (getEditingSegmentId()) {
+          setEditingSegmentId(null);
+          const ta = document.querySelector<HTMLTextAreaElement>('textarea:focus');
+          ta?.blur();
+        }
         break;
       }
       case 'ArrowLeft': {

@@ -9,7 +9,13 @@ from fastapi.responses import StreamingResponse
 from starlette.responses import Response
 
 from app.core.config import get_settings
-from app.schemas.segments import SegmentsResponse
+from app.schemas.segments import (
+    ConflictResponse,
+    PatchSegmentsRequest,
+    PatchSegmentsResponse,
+    SegmentItem,
+    SegmentsResponse,
+)
 from app.services import segments as segments_service
 
 router = APIRouter(tags=["segments"])
@@ -30,12 +36,41 @@ async def get_segments(memo_id: str) -> SegmentsResponse:
     if result is None:
         raise HTTPException(status_code=404, detail="Memo not found")
 
-    from app.schemas.segments import SegmentItem
-
     return SegmentsResponse(
         memo_id=result["memo_id"],
         revision=result["revision"],
         segments=[SegmentItem(**s) for s in result["segments"]],
+    )
+
+
+@router.patch("/memos/{memo_id}/segments", response_model=PatchSegmentsResponse)
+async def patch_segments(memo_id: str, body: PatchSegmentsRequest) -> PatchSegmentsResponse:
+    """Update segment texts with optimistic concurrency control."""
+    db_path = DATA_DIR / "nanoscribe.db"
+
+    try:
+        result = segments_service.patch_segments(
+            db_path,
+            memo_id,
+            body.base_revision,
+            [{"segment_id": u.segment_id, "text": u.text} for u in body.updates],
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Memo not found")
+    except segments_service.ConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=ConflictResponse(
+                detail="Conflict: transcript has been modified",
+                current_revision=exc.current_revision,
+                current_segments=[SegmentItem(**s) for s in exc.current_segments],
+            ).model_dump(),
+        )
+
+    return PatchSegmentsResponse(
+        memo_id=result["memo_id"],
+        revision=result["revision"],
+        updated_segments=[SegmentItem(**s) for s in result["updated_segments"]],
     )
 
 

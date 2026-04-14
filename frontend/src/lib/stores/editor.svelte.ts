@@ -84,6 +84,9 @@ interface EditorState {
   currentSegmentIndex: number;
   leftPaneWidthPct: number;
   isDraggingDivider: boolean;
+  editingSegmentId: string | null;
+  saving: boolean;
+  saveError: string | null;
 }
 
 let state = $state<EditorState>({
@@ -99,7 +102,10 @@ let state = $state<EditorState>({
   playbackSpeed: 1,
   currentSegmentIndex: -1,
   leftPaneWidthPct: loadPaneWidth(),
-  isDraggingDivider: false
+  isDraggingDivider: false,
+  editingSegmentId: null,
+  saving: false,
+  saveError: null
 });
 
 // Getters
@@ -142,6 +148,15 @@ export function getLeftPaneWidthPct(): number {
 export function getIsDraggingDivider(): boolean {
   return state.isDraggingDivider;
 }
+export function getEditingSegmentId(): string | null {
+  return state.editingSegmentId;
+}
+export function getSaving(): boolean {
+  return state.saving;
+}
+export function getSaveError(): string | null {
+  return state.saveError;
+}
 export function getSpeeds(): PlaybackSpeed[] {
   return SPEEDS;
 }
@@ -170,10 +185,122 @@ export function setPlaybackSpeed(speed: PlaybackSpeed): void {
   state.playbackSpeed = speed;
 }
 
+export function setEditingSegmentId(id: string | null): void {
+  state.editingSegmentId = id;
+}
+
 export function setLeftPaneWidthPct(pct: number): void {
   const clamped = Math.max(30, Math.min(70, pct));
   state.leftPaneWidthPct = clamped;
   savePaneWidth(clamped);
+}
+
+// Autosave debounce timer
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+// Track the last saved text per segment to avoid unnecessary saves
+let _pendingSaves: Map<string, string> = new Map();
+
+/**
+ * Update segment text locally and debounce autosave.
+ * Optimistically updates the local segment text, then sends a PATCH after 1.5s of inactivity.
+ */
+export function updateSegmentText(segmentId: string, newText: string): void {
+  // Optimistic local update
+  const seg = state.segments.find((s) => s.id === segmentId);
+  if (!seg) return;
+  seg.text = newText;
+  seg.edited = true;
+
+  // Track pending save
+  _pendingSaves.set(segmentId, newText);
+  state.saving = false;
+  state.saveError = null;
+
+  // Cancel existing timer and restart debounce
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+  }
+
+  _saveTimer = setTimeout(async () => {
+    _saveTimer = null;
+    await _flushPendingSaves();
+  }, 1500);
+}
+
+async function _flushPendingSaves(): Promise<void> {
+  if (_pendingSaves.size === 0) return;
+
+  const updates = Array.from(_pendingSaves.entries()).map(([segment_id, text]) => ({
+    segment_id,
+    text
+  }));
+
+  // Snapshot and clear pending saves
+  _pendingSaves = new Map();
+  state.saving = true;
+  state.saveError = null;
+
+  try {
+    const resp = await fetch(`/api/memos/${state.memoId}/segments`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base_revision: state.revision,
+        updates
+      })
+    });
+
+    if (resp.status === 409) {
+      // Conflict: refresh segments from server
+      const conflictData = await resp.json();
+      state.revision = conflictData.current_revision;
+      state.segments = conflictData.current_segments;
+      state.saveError = 'Transcript was modified by another session. Refreshed.';
+      return;
+    }
+
+    if (!resp.ok) {
+      throw new Error(`Save failed: ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    state.revision = data.revision;
+    state.saving = false;
+  } catch (e) {
+    state.saving = false;
+    state.saveError = e instanceof Error ? e.message : 'Save failed';
+    // Revert local changes on error
+    for (const upd of updates) {
+      const seg = state.segments.find((s) => s.id === upd.segment_id);
+      if (seg) {
+        // We can't perfectly revert, but we can mark the error
+      }
+    }
+  }
+}
+
+/**
+ * Cancel any pending autosave timer.
+ */
+export function cancelPendingSave(): void {
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  if (_pendingSaves.size > 0) {
+    _flushPendingSaves();
+  }
+}
+
+/**
+ * Immediately save any pending changes (e.g., before leaving the page).
+ */
+export async function flushSave(): Promise<void> {
+  if (_saveTimer !== null) {
+    clearTimeout(_saveTimer);
+    _saveTimer = null;
+  }
+  await _flushPendingSaves();
 }
 
 /**

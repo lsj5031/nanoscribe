@@ -24,3 +24,33 @@ class SegmentsResponse(BaseModel):
     memo_id: str
     revision: int
     segments: list[SegmentItem]
+
+
+class SegmentUpdate(BaseModel):
+    """A single segment text update."""
+
+    segment_id: str
+    text: str
+
+
+class PatchSegmentsRequest(BaseModel):
+    """Request body for PATCH /api/memos/{memoId}/segments."""
+
+    base_revision: int
+    updates: list[SegmentUpdate]
+
+
+class PatchSegmentsResponse(BaseModel):
+    """Response for PATCH /api/memos/{memoId}/segments."""
+
+    memo_id: str
+    revision: int
+    updated_segments: list[SegmentItem]
+
+
+class ConflictResponse(BaseModel):
+    """Response for 409 conflict."""
+
+    detail: str
+    current_revision: int
+    current_segments: list[SegmentItem]
