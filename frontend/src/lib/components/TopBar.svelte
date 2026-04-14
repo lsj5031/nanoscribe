@@ -1,26 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-
-  let searchQuery = $state('');
-  let searchOpen = $state(false);
-  let searchInput: HTMLInputElement | undefined = $state();
-
-  function handleSearchKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      searchOpen = false;
-      searchQuery = '';
-    } else if (e.key === 'Enter' && searchQuery.trim()) {
-      // Navigate to home with search query (search will be implemented in M4)
-      goto(`/?q=${encodeURIComponent(searchQuery.trim())}`);
-      searchOpen = false;
-    }
-  }
-
-  function openSearch() {
-    searchOpen = true;
-    setTimeout(() => searchInput?.focus(), 0);
-  }
+  import { openSearch } from '$lib/stores/search.svelte';
 
   function navigateToSettings() {
     goto('/settings');
@@ -51,39 +31,20 @@
     </span>
   </button>
 
-  <!-- Search -->
+  <!-- Right side: search + settings -->
   <div class="flex items-center gap-2">
-    {#if searchOpen}
-      <div class="relative">
-        <input
-          bind:this={searchInput}
-          bind:value={searchQuery}
-          onkeydown={handleSearchKeydown}
-          type="text"
-          placeholder="Search memos…"
-          class="w-64 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-sm text-text-primary placeholder-text-muted outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent"
-          aria-label="Search memos"
-        />
-        <kbd
-          class="absolute right-2 top-1/2 -translate-y-1/2 rounded bg-surface-600 px-1.5 py-0.5 text-xs text-text-muted"
-        >
-          Esc
-        </kbd>
-      </div>
-    {:else}
-      <button
-        onclick={openSearch}
-        class="flex items-center gap-2 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-accent hover:text-text-secondary"
-        aria-label="Open search"
-      >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.35-4.35" />
-        </svg>
-        <span>Search…</span>
-        <kbd class="rounded bg-surface-600 px-1.5 py-0.5 text-xs">⌘K</kbd>
-      </button>
-    {/if}
+    <button
+      onclick={openSearch}
+      class="flex items-center gap-2 rounded-lg border border-border bg-surface-700 px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-accent hover:text-text-secondary"
+      aria-label="Open search"
+    >
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8" />
+        <path d="m21 21-4.35-4.35" />
+      </svg>
+      <span>Search…</span>
+      <kbd class="rounded bg-surface-600 px-1.5 py-0.5 text-xs">⌘K</kbd>
+    </button>
 
     <!-- Settings -->
     <button
