@@ -4,6 +4,7 @@
   import { uploadFiles } from '$lib/stores/upload.svelte';
   import MemoCard from '$lib/components/MemoCard.svelte';
   import LibraryControls from '$lib/components/LibraryControls.svelte';
+  import RecordingModal from '$lib/components/RecordingModal.svelte';
   import {
     getMemos,
     getTotal,
@@ -19,6 +20,7 @@
 
   let fileInput: HTMLInputElement | undefined = $state();
   let searchInput: HTMLInputElement | undefined = $state();
+  let recordingModal: RecordingModal | undefined = $state();
 
   const memos = $derived(getMemos());
   const total = $derived(getTotal());
@@ -165,6 +167,7 @@
 
         {#if capabilities.recording}
           <button
+            onclick={() => recordingModal?.open()}
             class="flex items-center gap-2 rounded-lg border border-border bg-surface-800 px-5 py-2.5 text-sm text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary"
           >
             <svg class="h-4 w-4 text-error" viewBox="0 0 24 24" fill="currentColor">
@@ -223,6 +226,19 @@
 
         <!-- Controls -->
         <LibraryControls />
+
+        {#if capabilities.recording}
+          <button
+            onclick={() => recordingModal?.open()}
+            class="flex items-center gap-1.5 rounded-lg border border-border bg-surface-800 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary"
+            aria-label="Record audio"
+          >
+            <svg class="h-3.5 w-3.5 text-error" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="8" />
+            </svg>
+            <span>Record</span>
+          </button>
+        {/if}
 
         <!-- Memo count -->
         <span class="shrink-0 text-xs text-text-muted">
@@ -298,6 +314,8 @@
     </button>
   {/if}
 </div>
+
+<RecordingModal bind:this={recordingModal} />
 
 <style>
   @keyframes pulse {
