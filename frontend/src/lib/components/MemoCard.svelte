@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import WaveformThumbnail from './WaveformThumbnail.svelte';
   import {
     formatDuration,
     formatRelativeTime,
@@ -85,12 +86,9 @@
     <!-- Waveform area -->
     <div class="relative h-24 w-full overflow-hidden bg-transparent">
       {#if memo.waveform_url}
-        <!-- svelte-ignore a11y_img_redundant_alt -->
-        <img
-          src={memo.waveform_url}
-          alt="Waveform"
-          class="h-full w-full object-cover opacity-60 grayscale duration-[1500ms] ease-luxury group-hover:scale-105 group-hover:grayscale-0"
-          loading="lazy"
+        <WaveformThumbnail
+          url={memo.waveform_url}
+          class="h-full w-full opacity-60 grayscale duration-[1500ms] ease-luxury group-hover:scale-105 group-hover:grayscale-0"
         />
       {:else}
         <!-- Placeholder bars for memos without waveform -->
@@ -206,12 +204,9 @@
     <!-- Waveform thumbnail -->
     <div class="h-10 w-24 shrink-0 overflow-hidden rounded-none bg-transparent">
       {#if memo.waveform_url}
-        <!-- svelte-ignore a11y_img_redundant_alt -->
-        <img
-          src={memo.waveform_url}
-          alt="Waveform"
-          class="h-full w-full object-cover opacity-60 grayscale duration-[1500ms] ease-luxury group-hover:scale-105 group-hover:grayscale-0"
-          loading="lazy"
+        <WaveformThumbnail
+          url={memo.waveform_url}
+          class="h-full w-full opacity-60 grayscale duration-[1500ms] ease-luxury group-hover:scale-105 group-hover:grayscale-0"
         />
       {:else}
         <div class="flex h-full items-end justify-center gap-px px-1 pb-1 pt-2">

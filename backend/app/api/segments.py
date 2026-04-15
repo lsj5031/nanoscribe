@@ -78,6 +78,32 @@ async def patch_segments(memo_id: str, body: PatchSegmentsRequest) -> PatchSegme
     )
 
 
+@router.get("/memos/{memo_id}/waveform")
+async def get_waveform(memo_id: str) -> Response:
+    """Serve the memo's waveform peak data as JSON."""
+    # Guard against path traversal in memo_id
+    if "/" in memo_id or "\\" in memo_id or ".." in memo_id:
+        raise HTTPException(status_code=400, detail="Invalid memo ID")
+    memo_dir = DATA_DIR / "memos" / memo_id
+    # Verify resolved path stays within DATA_DIR/memos
+    try:
+        memo_dir.resolve().relative_to((DATA_DIR / "memos").resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid memo ID")
+    if not memo_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Memo not found")
+
+    waveform_path = memo_dir / "waveform.json"
+    if not waveform_path.is_file():
+        raise HTTPException(status_code=404, detail="Waveform not found")
+
+    return Response(
+        content=waveform_path.read_text(),
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.get("/memos/{memo_id}/audio")
 async def get_audio(memo_id: str) -> Response:
     """Serve the memo's normalized audio file as a streaming response."""
