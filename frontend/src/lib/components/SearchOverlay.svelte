@@ -106,29 +106,29 @@
 {#if isOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-50 flex items-start justify-center bg-surface-900/70 pt-[15vh] backdrop-blur-sm transition-opacity"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-surface-900/95 pt-[15vh] transition-opacity"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
-      class="flex w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-surface-800 shadow-2xl"
+      class="flex w-full max-w-3xl flex-col overflow-hidden rounded-none border border-text-primary/20 bg-surface-800 shadow-[0_8px_24px_rgba(0,0,0,0.06)]"
       onclick={handlePanelClick}
     >
       <!-- Search input -->
-      <div class="flex items-center gap-3 border-b border-border px-4 py-3">
+      <div class="flex items-center gap-6 border-b border-text-primary/20 px-10 py-8">
         {#if loading}
           <div
-            class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-accent"
+            class="h-6 w-6 shrink-0 animate-spin rounded-none border-2 border-text-primary/20 border-t-accent"
           ></div>
         {:else}
           <svg
-            class="h-4 w-4 shrink-0 text-text-muted"
+            class="h-6 w-6 shrink-0 text-text-muted"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="1.5"
           >
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
@@ -140,24 +140,29 @@
           value={query}
           oninput={handleInput}
           placeholder="Search memos…"
-          class="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
+          class="flex-1 bg-transparent font-serif text-4xl leading-tight text-text-primary placeholder-text-muted outline-none"
           aria-label="Search memos"
           aria-activedescendant={activeIndex >= 0 ? `search-result-${activeIndex}` : undefined}
           role="combobox"
           aria-expanded="true"
           aria-controls="search-results"
         />
-        <kbd class="rounded bg-surface-700 px-1.5 py-0.5 text-xs text-text-muted">Esc</kbd>
+        <kbd
+          class="rounded-none border border-text-primary/20 bg-transparent px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-text-muted"
+          >Esc</kbd
+        >
       </div>
 
       <!-- Results area -->
-      <div id="search-results" class="max-h-80 overflow-y-auto" role="listbox">
+      <div id="search-results" class="max-h-[50vh] overflow-y-auto" role="listbox">
         {#if !query.trim()}
-          <div class="px-4 py-8 text-center text-sm text-text-muted">Start typing to search…</div>
+          <div class="px-10 py-16 text-center text-sm font-sans text-text-muted">
+            Start typing to search…
+          </div>
         {:else if loading}
-          <div class="px-4 py-8 text-center text-sm text-text-muted">Searching…</div>
+          <div class="px-10 py-16 text-center text-sm font-sans text-text-muted">Searching…</div>
         {:else if total === 0}
-          <div class="px-4 py-8 text-center text-sm text-text-muted">
+          <div class="px-10 py-16 text-center text-sm font-sans text-text-muted">
             No results found for "{query}"
           </div>
         {:else}
@@ -171,33 +176,33 @@
               role="option"
               tabindex="-1"
               aria-selected={i === activeIndex}
-              class="flex cursor-pointer items-start gap-3 border-b border-border/50 px-4 py-3 last:border-b-0 {i ===
+              class="flex cursor-pointer items-start gap-6 border-b border-text-primary/10 px-10 py-6 last:border-b-0 transition-colors duration-500 ease-luxury {i ===
               activeIndex
-                ? 'bg-surface-600'
-                : 'bg-surface-800 hover:bg-surface-700'}"
+                ? 'bg-surface-700'
+                : 'bg-surface-800 hover:bg-surface-700/50'}"
               onclick={() => handleResultClick(result)}
               onmouseenter={() => handleResultMouseEnter(i)}
             >
               <!-- Icon -->
-              <div class="mt-0.5 shrink-0">
+              <div class="mt-1.5 shrink-0">
                 {#if result.match_type === 'title'}
                   <svg
-                    class="h-4 w-4 text-accent"
+                    class="h-5 w-5 text-accent"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.5"
                   >
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14,2 14,8 20,8" />
                   </svg>
                 {:else}
                   <svg
-                    class="h-4 w-4 text-text-muted"
+                    class="h-5 w-5 text-text-muted"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
+                    stroke-width="1.5"
                   >
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -209,23 +214,27 @@
               <!-- Content -->
               <div class="min-w-0 flex-1">
                 {#if result.match_type === 'title'}
-                  <p class="text-sm font-medium text-text-primary">{result.memo_title}</p>
+                  <p class="font-serif text-xl text-text-primary">{result.memo_title}</p>
                   <span
-                    class="mt-1 inline-block rounded bg-accent/20 px-1.5 py-0.5 text-xs text-accent"
+                    class="mt-2 inline-block rounded-none border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-accent"
                   >
                     Title match
                   </span>
                 {:else}
-                  <p class="text-sm text-text-primary">
+                  <p class="font-sans text-sm leading-relaxed text-text-primary">
                     {result.segment_text ? truncate(result.segment_text, 150) : ''}
                   </p>
-                  <div class="mt-1 flex items-center gap-2">
+                  <div class="mt-3 flex items-center gap-3">
                     {#if result.start_ms != null}
-                      <span class="rounded bg-surface-700 px-1.5 py-0.5 text-xs text-accent">
+                      <span
+                        class="rounded-none border border-accent/30 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-accent"
+                      >
                         {formatTimestamp(result.start_ms)}
                       </span>
                     {/if}
-                    <span class="text-xs text-text-muted">{result.memo_title}</span>
+                    <span class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                      >{result.memo_title}</span
+                    >
                   </div>
                 {/if}
               </div>
@@ -237,16 +246,16 @@
       <!-- Footer hint -->
       {#if total > 0}
         <div
-          class="flex items-center gap-4 border-t border-border px-4 py-2 text-xs text-text-muted"
+          class="flex items-center gap-6 border-t border-text-primary/20 px-10 py-4 text-[10px] uppercase tracking-[0.2em] text-text-muted"
         >
-          <span class="flex items-center gap-1">
-            <kbd class="rounded bg-surface-700 px-1 py-0.5">↑↓</kbd> navigate
+          <span class="flex items-center gap-2">
+            <kbd class="rounded-none border border-text-primary/20 px-1.5 py-0.5">↑↓</kbd> navigate
           </span>
-          <span class="flex items-center gap-1">
-            <kbd class="rounded bg-surface-700 px-1 py-0.5">↵</kbd> select
+          <span class="flex items-center gap-2">
+            <kbd class="rounded-none border border-text-primary/20 px-1.5 py-0.5">↵</kbd> select
           </span>
-          <span class="flex items-center gap-1">
-            <kbd class="rounded bg-surface-700 px-1 py-0.5">esc</kbd> close
+          <span class="flex items-center gap-2">
+            <kbd class="rounded-none border border-text-primary/20 px-1.5 py-0.5">esc</kbd> close
           </span>
           <span class="ml-auto">{total} result{total !== 1 ? 's' : ''}</span>
         </div>

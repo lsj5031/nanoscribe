@@ -59,7 +59,7 @@
     const barWidth = Math.max(1, width / peaks.length);
     const midY = height / 2;
 
-    ctx.fillStyle = '#00d4ff';
+    ctx.fillStyle = '#D4AF37'; // Gold accent
 
     for (let i = 0; i < peaks.length; i++) {
       const barHeight = Math.max(1, peaks[i] * height * 0.9);

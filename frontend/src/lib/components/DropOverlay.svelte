@@ -50,13 +50,13 @@
 
 {#if isDragging}
   <div
-    class="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-surface-900/80 backdrop-blur-sm"
+    class="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-surface-900/95"
     role="presentation"
   >
     <div
-      class="flex max-w-md flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-accent bg-surface-800/90 px-12 py-10 shadow-2xl"
+      class="flex w-full max-w-2xl flex-col items-center gap-8 rounded-none border border-text-primary/20 bg-surface-800 p-12 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
     >
-      <div class="rounded-full bg-accent-muted p-4">
+      <div class="rounded-none border border-text-primary/20 p-6">
         <svg
           class="h-10 w-10 text-accent"
           viewBox="0 0 24 24"
@@ -70,8 +70,10 @@
         </svg>
       </div>
       <div class="text-center">
-        <p class="text-lg font-semibold text-text-primary">Drop audio files here</p>
-        <p class="mt-1 text-sm text-text-secondary">WAV, MP3, M4A, AAC, WebM, OGG, OPUS</p>
+        <p class="font-serif text-4xl leading-tight text-text-primary">Drop audio files here</p>
+        <p class="mt-4 text-xs uppercase tracking-[0.2em] text-text-secondary">
+          WAV, MP3, M4A, AAC, WebM, OGG, OPUS
+        </p>
       </div>
     </div>
   </div>

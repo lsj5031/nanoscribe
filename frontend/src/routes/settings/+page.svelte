@@ -46,61 +46,72 @@
   }
 </script>
 
-<div class="mx-auto max-w-2xl px-4 py-8">
-  <h1 class="text-2xl font-semibold text-text-primary">Settings</h1>
-  <p class="mt-1 text-sm text-text-secondary">Configure NanoScribe and view system status.</p>
+<div class="mx-auto max-w-2xl px-4 py-12">
+  <h1 class="font-serif text-4xl leading-tight text-text-primary">Settings</h1>
+  <p class="mt-4 text-sm font-sans text-text-secondary">
+    Configure NanoScribe and view system status.
+  </p>
 
   {#if isLoading}
-    <div class="mt-8 flex justify-center">
-      <div class="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-accent"></div>
+    <div class="mt-12 flex justify-center">
+      <div
+        class="h-8 w-8 animate-spin rounded-none border border-text-primary/20 border-t-accent"
+      ></div>
     </div>
   {:else}
-    <div class="mt-8 space-y-6">
+    <div class="mt-12 space-y-12">
       <!-- System Status -->
-      <section class="rounded-xl border border-border bg-surface-800 p-6">
-        <h2 class="text-lg font-medium text-text-primary">System Status</h2>
-        <div class="mt-4 space-y-3">
+      <section class="border-t border-text-primary/20 pt-8">
+        <h2 class="font-serif text-2xl leading-tight text-text-primary">System Status</h2>
+        <div class="mt-6 space-y-4">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Status</span>
-            <span class="flex items-center gap-1.5 text-sm">
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Status</span>
+            <span class="flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
               {#if status.status === 'ready'}
-                <span class="h-2 w-2 rounded-full bg-success"></span>
+                <span class="h-2 w-2 rounded-none bg-success"></span>
                 <span class="text-success">Ready</span>
               {:else if status.status === 'loading'}
-                <span class="h-2 w-2 rounded-full bg-warning"></span>
+                <span class="h-2 w-2 rounded-none bg-warning"></span>
                 <span class="text-warning">Loading</span>
               {:else}
-                <span class="h-2 w-2 rounded-full bg-error"></span>
+                <span class="h-2 w-2 rounded-none bg-error"></span>
                 <span class="text-error">Error</span>
               {/if}
             </span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Model</span>
-            <span class="text-sm font-mono text-text-primary">{caps.asr_model || '—'}</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Model</span>
+            <span class="text-sm font-sans text-text-primary">{caps.asr_model || '—'}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Device</span>
-            <span class="text-sm text-text-primary uppercase">{status.device}</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Device</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-primary">{status.device}</span
+            >
           </div>
           {#if status.gpu_available}
             <div class="flex items-center justify-between">
-              <span class="text-sm text-text-secondary">GPU</span>
-              <span class="text-sm text-text-primary">{status.gpu_name || 'Available'}</span>
+              <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">GPU</span>
+              <span class="text-sm font-sans text-text-primary"
+                >{status.gpu_name || 'Available'}</span
+              >
             </div>
           {/if}
         </div>
       </section>
 
       <!-- Transcription Settings -->
-      <section class="rounded-xl border border-border bg-surface-800 p-6">
-        <h2 class="text-lg font-medium text-text-primary">Transcription</h2>
-        <div class="mt-4 space-y-4">
+      <section class="border-t border-text-primary/20 pt-8">
+        <h2 class="font-serif text-2xl leading-tight text-text-primary">Transcription</h2>
+        <div class="mt-6 space-y-8">
           {#if caps.speaker_diarization}
             <div class="flex items-center justify-between">
               <div>
-                <span class="text-sm text-text-secondary">Speaker Diarization</span>
-                <p class="text-xs text-text-muted">Identify and label different speakers</p>
+                <span class="text-xs uppercase tracking-[0.2em] text-text-secondary"
+                  >Speaker Diarization</span
+                >
+                <p class="mt-2 text-sm font-sans text-text-muted">
+                  Identify and label different speakers
+                </p>
               </div>
               <button
                 type="button"
@@ -108,13 +119,13 @@
                 aria-checked={getDiarizationEnabled()}
                 aria-label="Toggle speaker diarization"
                 onclick={handleDiarizationToggle}
-                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out {getDiarizationEnabled()
-                  ? 'bg-accent'
-                  : 'bg-surface-600'}"
+                class="relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-none border border-text-primary/20 transition-colors duration-500 ease-luxury {getDiarizationEnabled()
+                  ? 'bg-accent border-accent'
+                  : 'bg-transparent'}"
               >
                 <span
-                  class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {getDiarizationEnabled()
-                    ? 'translate-x-5'
+                  class="pointer-events-none inline-block h-5 w-5 transform rounded-none bg-text-primary shadow-none transition duration-500 ease-luxury {getDiarizationEnabled()
+                    ? 'translate-x-6 bg-surface-900'
                     : 'translate-x-0'}"
                 ></span>
               </button>
@@ -123,14 +134,17 @@
 
           {#if caps.hotwords}
             <div>
-              <label for="hotwords" class="text-sm text-text-secondary">Hotwords</label>
-              <p class="mb-1.5 text-xs text-text-muted">
+              <label
+                for="hotwords"
+                class="block text-xs uppercase tracking-[0.2em] text-text-secondary">Hotwords</label
+              >
+              <p class="mb-4 mt-2 text-sm font-sans text-text-muted">
                 Enter keywords to improve recognition, one per line
               </p>
               <textarea
                 id="hotwords"
                 rows="3"
-                class="w-full rounded-lg border border-border bg-surface-700 px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent focus:outline-none"
+                class="w-full rounded-none border-0 border-b border-text-primary/20 bg-transparent px-0 py-2 text-sm font-sans text-text-primary placeholder-text-muted transition-colors duration-500 ease-luxury focus:border-accent focus:outline-none focus:ring-0"
                 placeholder="e.g. NanoScribe&#10;FunASR"
                 value={hotwordsInput}
                 oninput={handleHotwordsInput}
@@ -140,15 +154,18 @@
           {/if}
 
           <div>
-            <label for="language" class="text-sm text-text-secondary">Language</label>
-            <p class="mb-1.5 text-xs text-text-muted">
+            <label
+              for="language"
+              class="block text-xs uppercase tracking-[0.2em] text-text-secondary">Language</label
+            >
+            <p class="mb-4 mt-2 text-sm font-sans text-text-muted">
               {caps.language_auto_detect
                 ? 'Auto-detect is available — override only if needed'
                 : 'Select the language for transcription'}
             </p>
             <select
               id="language"
-              class="w-full rounded-lg border border-border bg-surface-700 px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+              class="w-full rounded-none border-0 border-b border-text-primary/20 bg-transparent px-0 py-2 text-sm font-sans text-text-primary transition-colors duration-500 ease-luxury focus:border-accent focus:outline-none focus:ring-0"
               value={getLanguage()}
               onchange={handleLanguageChange}
             >
@@ -161,30 +178,30 @@
       </section>
 
       <!-- Storage -->
-      <section class="rounded-xl border border-border bg-surface-800 p-6">
-        <h2 class="text-lg font-medium text-text-primary">Storage</h2>
-        <div class="mt-4 space-y-3">
+      <section class="border-t border-text-primary/20 pt-8">
+        <h2 class="font-serif text-2xl leading-tight text-text-primary">Storage</h2>
+        <div class="mt-6 space-y-4">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Data Directory</span>
-            <span class="text-sm font-mono text-text-primary">{status.data_dir}</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary"
+              >Data Directory</span
+            >
+            <span class="text-sm font-sans text-text-primary">{status.data_dir}</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Storage Used</span>
-            <span class="text-sm text-text-primary">{status.storage_used_mb} MB</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Storage Used</span>
+            <span class="text-sm font-sans text-text-primary">{status.storage_used_mb} MB</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Memos</span>
-            <span class="text-sm text-text-primary">{status.memo_count}</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Memos</span>
+            <span class="text-sm font-sans text-text-primary">{status.memo_count}</span>
           </div>
           <div class="flex items-start justify-between">
-            <span class="text-sm text-text-secondary">Cached Models</span>
-            <div class="flex flex-wrap items-center justify-end">
-              {#each status.models_cached as model, i}
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Cached Models</span
+            >
+            <div class="flex flex-wrap items-center justify-end gap-2">
+              {#each status.models_cached as model}
                 <span
-                  class="rounded-full bg-surface-600 px-2 py-0.5 text-xs font-mono text-text-secondary {i >
-                  0
-                    ? 'ml-1.5'
-                    : ''}"
+                  class="rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] text-text-secondary"
                 >
                   {model}
                 </span>
@@ -195,28 +212,28 @@
       </section>
 
       <!-- About -->
-      <section class="rounded-xl border border-border bg-surface-800 p-6">
-        <h2 class="text-lg font-medium text-text-primary">About</h2>
-        <div class="mt-4 space-y-3">
+      <section class="border-t border-text-primary/20 pt-8">
+        <h2 class="font-serif text-2xl leading-tight text-text-primary">About</h2>
+        <div class="mt-6 space-y-4">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">App</span>
-            <span class="text-sm text-text-primary">NanoScribe v0.1.0</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">App</span>
+            <span class="text-sm font-sans text-text-primary">NanoScribe v0.1.0</span>
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-sm text-text-secondary">Engine</span>
+            <span class="text-xs uppercase tracking-[0.2em] text-text-secondary">Engine</span>
             <a
               href="https://github.com/modelscope/FunASR"
               target="_blank"
               rel="noopener noreferrer"
-              class="text-sm text-accent hover:underline"
+              class="text-sm font-sans text-accent transition-colors duration-500 ease-luxury hover:text-text-primary"
             >
               FunASR
               <svg
-                class="ml-0.5 inline h-3 w-3"
+                class="ml-1 inline h-3 w-3"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2"
+                stroke-width="1.5"
               >
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />

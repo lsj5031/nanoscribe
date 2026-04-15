@@ -1,46 +1,112 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-accent: #00d4ff;
-  --color-accent-hover: #00bce6;
-  --color-accent-muted: rgba(0, 212, 255, 0.15);
-  --color-surface-900: #0a0a0f;
-  --color-surface-800: #0f1117;
-  --color-surface-700: #1a1d2e;
-  --color-surface-600: #252836;
-  --color-surface-500: #3a3d4e;
-  --color-text-primary: #e8e8ed;
-  --color-text-secondary: #9ca3af;
-  --color-text-muted: #6b7280;
-  --color-border: #2a2d3e;
+  --color-alabaster: #f9f8f6;
+  --color-charcoal: #1a1a1a;
+  --color-taupe: #ebe5de;
+  --color-warm-grey: #6c6863;
+  --color-gold: #d4af37;
+  --color-white: #ffffff;
+
+  /* Map old variable names temporarily or remap to new conceptual names */
+  /* Re-mapping core UI semantics */
+  --color-accent: var(--color-gold);
+  --color-accent-hover: #b08d24; /* A slightly darker gold for some states, though we should prefer opacity */
+  --color-accent-muted: rgba(212, 175, 55, 0.15);
+
+  --color-surface-900: var(--color-alabaster);
+  --color-surface-800: var(
+    --color-alabaster
+  ); /* No real distinction, but keeping variable available */
+  --color-surface-700: var(--color-taupe);
+  --color-surface-600: var(--color-taupe);
+  --color-surface-500: var(--color-taupe);
+
+  --color-text-primary: var(--color-charcoal);
+  --color-text-secondary: var(--color-warm-grey);
+  --color-text-muted: var(--color-warm-grey);
+
+  --color-border: rgba(26, 26, 26, 0.2); /* Charcoal with opacity */
+  --color-border-strong: var(--color-charcoal);
+
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
 
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
 }
 
 /* Base styles */
 body {
-  background-color: var(--color-surface-900);
-  color: var(--color-text-primary);
+  background-color: var(--color-alabaster);
+  color: var(--color-charcoal);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
+/* Remove border radii everywhere globally (if there are legacy classes) */
+* {
+  border-radius: 0 !important;
+}
+
+/* Typography styles to be used easily */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+/* Scrollbar - Minimal, sophisticated */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-surface-800);
+  background: var(--color-alabaster);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-500);
-  border-radius: 3px;
+  background: rgba(26, 26, 26, 0.1);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-surface-600);
+  background: rgba(26, 26, 26, 0.3);
+}
+
+/* Paper Noise Texture Overlay */
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Vertical Gridlines */
+.gridline {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: rgba(26, 26, 26, 0.1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Vertical writing text */
+.writing-vertical {
+  writing-mode: vertical-rl;
+}
+
+/* Custom easing class for Tailwind since v4 doesn't have it by default or we can use arbitrary values */
+.ease-luxury {
+  transition-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }

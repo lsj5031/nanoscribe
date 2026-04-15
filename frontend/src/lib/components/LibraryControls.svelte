@@ -57,14 +57,15 @@
 
 <svelte:window onclick={closeDropdowns} />
 
-<div class="flex items-center gap-2">
+<div class="flex items-center gap-6">
   <!-- Grid/List toggle -->
-  <div class="flex rounded-lg border border-border bg-surface-800 p-0.5">
+  <div class="flex items-center gap-4">
     <button
       onclick={() => setViewMode('grid')}
-      class="rounded-md p-1.5 transition-colors {viewMode === 'grid'
-        ? 'bg-surface-600 text-text-primary'
-        : 'text-text-muted hover:text-text-secondary'}"
+      class="rounded-none border-b py-1 duration-500 ease-luxury hover:border-accent hover:text-accent {viewMode ===
+      'grid'
+        ? 'border-accent text-accent'
+        : 'border-transparent text-text-muted'}"
       aria-label="Grid view"
       aria-pressed={viewMode === 'grid'}
     >
@@ -77,9 +78,10 @@
     </button>
     <button
       onclick={() => setViewMode('list')}
-      class="rounded-md p-1.5 transition-colors {viewMode === 'list'
-        ? 'bg-surface-600 text-text-primary'
-        : 'text-text-muted hover:text-text-secondary'}"
+      class="rounded-none border-b py-1 duration-500 ease-luxury hover:border-accent hover:text-accent {viewMode ===
+      'list'
+        ? 'border-accent text-accent'
+        : 'border-transparent text-text-muted'}"
       aria-label="List view"
       aria-pressed={viewMode === 'list'}
     >
@@ -101,7 +103,7 @@
         e.stopPropagation();
         toggleSort();
       }}
-      class="flex items-center gap-1.5 rounded-lg border border-border bg-surface-800 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary"
+      class="flex items-center gap-2 rounded-none border-b border-text-primary bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] text-text-secondary duration-500 ease-luxury hover:border-accent hover:text-accent"
       aria-label="Sort"
     >
       <svg
@@ -117,17 +119,17 @@
     </button>
     {#if sortOpen}
       <div
-        class="absolute right-0 top-full z-10 mt-1 min-w-[140px] rounded-lg border border-border bg-surface-800 py-1 shadow-xl"
+        class="absolute right-0 top-full z-10 mt-2 min-w-[180px] rounded-none border-t border-text-primary/20 bg-surface-900 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.06)]"
       >
         <button
           onclick={(e) => {
             e.stopPropagation();
             selectSort('recent');
           }}
-          class="flex w-full items-center gap-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary {sort ===
+          class="flex w-full items-center gap-3 px-4 py-3 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:bg-text-primary/5 hover:text-accent {sort ===
           'recent'
             ? 'text-accent'
-            : ''}"
+            : 'text-text-secondary'}"
         >
           {#if sort === 'recent'}
             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"
@@ -143,10 +145,10 @@
             e.stopPropagation();
             selectSort('duration');
           }}
-          class="flex w-full items-center gap-2 px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-700 hover:text-text-primary {sort ===
+          class="flex w-full items-center gap-3 px-4 py-3 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:bg-text-primary/5 hover:text-accent {sort ===
           'duration'
             ? 'text-accent'
-            : ''}"
+            : 'text-text-secondary'}"
         >
           {#if sort === 'duration'}
             <svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"
@@ -168,9 +170,9 @@
         e.stopPropagation();
         toggleFilter();
       }}
-      class="flex items-center gap-1.5 rounded-lg border border-border bg-surface-800 px-3 py-1.5 text-xs transition-colors hover:border-accent/40 {statusFilter
-        ? 'border-accent/40 text-accent'
-        : 'text-text-secondary hover:text-text-primary'}"
+      class="flex items-center gap-2 rounded-none border-b bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:border-accent hover:text-accent {statusFilter
+        ? 'border-accent text-accent'
+        : 'border-text-primary text-text-secondary'}"
       aria-label="Filter by status"
     >
       <svg
@@ -190,7 +192,7 @@
     </button>
     {#if filterOpen}
       <div
-        class="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded-lg border border-border bg-surface-800 py-1 shadow-xl"
+        class="absolute right-0 top-full z-10 mt-2 min-w-[180px] rounded-none border-t border-text-primary/20 bg-surface-900 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.06)]"
       >
         {#each statusOptions as option}
           <button
@@ -198,10 +200,10 @@
               e.stopPropagation();
               selectStatus(option.value);
             }}
-            class="flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors hover:bg-surface-700 {statusFilter ===
+            class="flex w-full items-center gap-3 px-4 py-3 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:bg-text-primary/5 hover:text-accent {statusFilter ===
             option.value
               ? 'text-accent'
-              : 'text-text-secondary hover:text-text-primary'}"
+              : 'text-text-secondary'}"
           >
             {#if statusFilter === option.value}
               <svg class="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"

@@ -105,7 +105,13 @@
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
-<div class="flex h-screen flex-col bg-surface-900">
+<div class="noise-overlay"></div>
+<div class="gridline left-[8.33%]"></div>
+<div class="gridline left-[33.33%]"></div>
+<div class="gridline right-[33.33%]"></div>
+<div class="gridline right-[8.33%]"></div>
+
+<div class="flex h-screen flex-col bg-surface-900 relative z-10">
   <TopBar />
   <main class="flex-1 overflow-y-auto">
     {@render children()}

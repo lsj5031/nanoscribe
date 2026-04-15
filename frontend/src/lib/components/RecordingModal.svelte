@@ -209,29 +209,29 @@
 {#if visible}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-900/90 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-900/95"
     onkeydown={(e) => {
       if (e.key === 'Escape' && !isRecording && !submitting) close();
     }}
   >
     <div
-      class="flex w-full max-w-md flex-col gap-6 rounded-2xl border border-border bg-surface-800 p-6 shadow-2xl"
+      class="flex w-full max-w-lg flex-col gap-10 rounded-none border border-text-primary/20 bg-surface-800 p-12 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-text-primary">Record Audio</h2>
+      <div class="flex items-center justify-between border-b border-text-primary/20 pb-4">
+        <h2 class="font-serif text-3xl text-text-primary">Record Audio</h2>
         {#if !isRecording && !submitting}
           <button
             onclick={close}
-            class="rounded-lg p-1 text-text-muted transition-colors hover:text-text-primary"
+            class="rounded-none p-2 text-text-muted transition-colors duration-500 ease-luxury hover:text-text-primary"
             aria-label="Close"
           >
             <svg
-              class="h-5 w-5"
+              class="h-6 w-6"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.5"
             >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -242,14 +242,14 @@
 
       {#if !supported}
         <!-- Browser not supported -->
-        <div class="flex flex-col items-center gap-4 py-4 text-center">
-          <div class="rounded-full bg-error/20 p-4">
+        <div class="flex flex-col items-center gap-6 py-6 text-center">
+          <div class="rounded-none border border-error/20 p-6">
             <svg
-              class="h-8 w-8 text-error"
+              class="h-10 w-10 text-error"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.5"
             >
               <circle cx="12" cy="12" r="10" />
               <line x1="15" y1="9" x2="9" y2="15" />
@@ -257,8 +257,8 @@
             </svg>
           </div>
           <div>
-            <p class="font-medium text-text-primary">Recording not supported</p>
-            <p class="mt-1 text-sm text-text-secondary">
+            <p class="font-serif text-2xl text-text-primary">Recording not supported</p>
+            <p class="mt-4 font-sans text-sm text-text-secondary">
               Your browser does not support audio recording. Please use a modern browser like Chrome
               or Firefox.
             </p>
@@ -266,14 +266,14 @@
         </div>
       {:else if !permission || permission === 'prompt'}
         <!-- Permission request -->
-        <div class="flex flex-col items-center gap-4 py-4 text-center">
-          <div class="rounded-full bg-accent-muted p-4">
+        <div class="flex flex-col items-center gap-8 py-6 text-center">
+          <div class="rounded-none border border-accent/20 p-6">
             <svg
-              class="h-8 w-8 text-accent"
+              class="h-10 w-10 text-accent"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.5"
             >
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -282,28 +282,28 @@
             </svg>
           </div>
           <div>
-            <p class="font-medium text-text-primary">Allow microphone access</p>
-            <p class="mt-1 text-sm text-text-secondary">
+            <p class="font-serif text-2xl text-text-primary">Allow microphone access</p>
+            <p class="mt-4 font-sans text-sm text-text-secondary">
               NanoScribe needs access to your microphone to record audio.
             </p>
           </div>
           <button
             onclick={handleRequestPermission}
-            class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-surface-900 transition-colors hover:bg-accent-hover"
+            class="rounded-none border border-text-primary/20 bg-transparent px-8 py-3 text-xs uppercase tracking-[0.2em] transition-all duration-500 ease-luxury hover:bg-text-primary hover:text-surface-900"
           >
             Allow Microphone
           </button>
         </div>
       {:else if permission === 'denied'}
         <!-- Permission denied -->
-        <div class="flex flex-col items-center gap-4 py-4 text-center">
-          <div class="rounded-full bg-error/20 p-4">
+        <div class="flex flex-col items-center gap-6 py-6 text-center">
+          <div class="rounded-none border border-error/20 p-6">
             <svg
-              class="h-8 w-8 text-error"
+              class="h-10 w-10 text-error"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.5"
             >
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <line x1="1" y1="1" x2="23" y2="23" />
@@ -314,9 +314,11 @@
             </svg>
           </div>
           <div>
-            <p class="font-medium text-text-primary">Microphone access denied</p>
-            <p class="mt-1 text-sm text-text-secondary">To re-enable microphone access:</p>
-            <ul class="mt-2 space-y-1 text-left text-xs text-text-muted">
+            <p class="font-serif text-2xl text-text-primary">Microphone access denied</p>
+            <p class="mt-4 font-sans text-sm text-text-secondary">
+              To re-enable microphone access:
+            </p>
+            <ul class="mt-4 space-y-2 text-left font-sans text-sm text-text-muted">
               <li>1. Click the lock/info icon in your browser's address bar</li>
               <li>2. Find "Microphone" in the permissions list</li>
               <li>3. Change it to "Allow"</li>
@@ -325,25 +327,27 @@
           </div>
           <button
             onclick={handleRequestPermission}
-            class="rounded-lg border border-border bg-surface-700 px-5 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-surface-600"
+            class="rounded-none border border-text-primary/20 bg-transparent px-8 py-3 text-xs uppercase tracking-[0.2em] transition-all duration-500 ease-luxury hover:bg-text-primary hover:text-surface-900"
           >
             Try Again
           </button>
         </div>
       {:else}
         <!-- Recording interface -->
-        <div class="flex flex-col gap-5">
+        <div class="flex flex-col gap-10">
           <!-- Device selector -->
           {#if devices.length > 1 && !isRecording}
             <div>
-              <label for="device-select" class="mb-1.5 block text-xs text-text-muted"
+              <label
+                for="device-select"
+                class="mb-2 block text-xs uppercase tracking-[0.2em] text-text-secondary"
                 >Input Device</label
               >
               <select
                 id="device-select"
                 bind:value={selectedDeviceId}
                 onchange={handleDeviceChange}
-                class="w-full rounded-lg border border-border bg-surface-700 px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent"
+                class="w-full rounded-none border-0 border-b border-text-primary/20 bg-transparent px-0 py-2 font-sans text-sm text-text-primary outline-none transition-colors duration-500 ease-luxury focus:border-accent"
               >
                 {#each devices as device}
                   <option value={device.deviceId}>
@@ -355,24 +359,26 @@
           {/if}
 
           <!-- Audio level visualization -->
-          <div class="flex h-12 items-center justify-center gap-0.5 rounded-xl bg-surface-700 px-4">
+          <div
+            class="flex h-16 items-center justify-center gap-1 border-y border-text-primary/10 px-4"
+          >
             {#if isRecording && !isPaused}
               {#each Array(BAR_COUNT) as _, i}
                 <div
-                  class="w-1 rounded-full transition-all duration-75 {audioLevel * 3 > i / BAR_COUNT
+                  class="w-1 rounded-none transition-all duration-75 {audioLevel * 3 > i / BAR_COUNT
                     ? 'bg-accent'
-                    : 'bg-surface-500'}"
+                    : 'bg-text-primary/20'}"
                   style="height: {Math.max(
                     4,
                     Math.min(
-                      40,
-                      audioLevel * 60 * (1 - Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2)) + 4
+                      48,
+                      audioLevel * 80 * (1 - Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2)) + 4
                     )
                   )}px;"
                 ></div>
               {/each}
             {:else}
-              <span class="text-sm text-text-muted">
+              <span class="text-xs uppercase tracking-[0.2em] text-text-muted">
                 {isRecording ? 'Paused' : 'Ready to record'}
               </span>
             {/if}
@@ -380,48 +386,60 @@
 
           <!-- Timer -->
           <div class="text-center">
-            <span class="font-mono text-3xl font-light text-text-primary">{durationStr}</span>
+            <span class="font-serif text-6xl tracking-tight text-text-primary">{durationStr}</span>
             {#if isRecording && !isPaused}
-              <div class="mt-1 flex items-center justify-center gap-1.5">
-                <div class="h-2 w-2 animate-pulse rounded-full bg-error"></div>
-                <span class="text-xs text-error">REC</span>
+              <div class="mt-4 flex items-center justify-center gap-2">
+                <div class="h-2 w-2 rounded-none bg-error opacity-80"></div>
+                <span class="text-xs uppercase tracking-[0.2em] text-error">Recording</span>
               </div>
             {/if}
           </div>
 
           <!-- Controls -->
-          <div class="flex items-center justify-center gap-3">
+          <div class="flex items-center justify-center gap-6">
             {#if isRecording}
               <!-- Pause / Resume -->
               <button
                 onclick={isPaused ? handleResume : handlePause}
-                class="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface-700 text-text-primary transition-colors hover:bg-surface-600"
+                class="flex h-14 w-14 items-center justify-center rounded-none border border-text-primary/20 bg-transparent text-text-primary transition-colors duration-500 ease-luxury hover:bg-surface-700"
                 aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
               >
                 {#if isPaused}
-                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="5,3 19,12 5,21" />
                   </svg>
                 {:else}
-                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
                     <rect x="6" y="4" width="4" height="16" />
                     <rect x="14" y="4" width="4" height="16" />
                   </svg>
                 {/if}
               </button>
 
+              <!-- Stop & Submit -->
+              <button
+                onclick={handleStopAndSubmit}
+                disabled={submitting}
+                class="flex h-20 w-20 items-center justify-center rounded-none bg-text-primary text-surface-900 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all duration-500 ease-luxury hover:bg-text-primary/90 hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:scale-95 disabled:opacity-50"
+                aria-label="Stop and submit recording"
+              >
+                <svg class="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" />
+                </svg>
+              </button>
+
               <!-- Discard -->
               <button
                 onclick={handleDiscard}
-                class="flex h-12 w-12 items-center justify-center rounded-full border border-error/30 bg-error/10 text-error transition-colors hover:bg-error/20"
+                class="flex h-14 w-14 items-center justify-center rounded-none border border-error/30 bg-transparent text-error transition-colors duration-500 ease-luxury hover:bg-error/10"
                 aria-label="Discard recording"
               >
                 <svg
-                  class="h-5 w-5"
+                  class="h-6 w-6"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="2"
+                  stroke-width="1.5"
                 >
                   <polyline points="3,6 5,6 21,6" />
                   <path
@@ -429,34 +447,22 @@
                   />
                 </svg>
               </button>
-
-              <!-- Stop & Submit -->
-              <button
-                onclick={handleStopAndSubmit}
-                disabled={submitting}
-                class="flex h-14 w-14 items-center justify-center rounded-full bg-success text-surface-900 shadow-lg transition-all hover:bg-success/90 hover:shadow-xl active:scale-95 disabled:opacity-50"
-                aria-label="Stop and submit recording"
-              >
-                <svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" rx="1" />
-                </svg>
-              </button>
             {:else}
               <!-- Start recording button -->
               <button
                 onclick={handleStartRecording}
-                class="group flex h-16 w-16 items-center justify-center rounded-full bg-error shadow-lg transition-all hover:bg-error/90 hover:shadow-xl hover:scale-105 active:scale-95"
+                class="group flex h-20 w-20 items-center justify-center rounded-none bg-error shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all duration-500 ease-luxury hover:bg-error/90 hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:scale-95"
                 aria-label="Start recording"
               >
                 <div
-                  class="h-7 w-7 rounded-full bg-white transition-transform group-hover:scale-110"
+                  class="h-8 w-8 rounded-none bg-white transition-transform duration-500 ease-luxury group-hover:scale-110"
                 ></div>
               </button>
             {/if}
           </div>
 
           {#if isRecording}
-            <p class="text-center text-xs text-text-muted">
+            <p class="text-center text-xs uppercase tracking-[0.2em] text-text-muted">
               {submitting ? 'Uploading…' : 'Tap the square to stop and submit'}
             </p>
           {/if}
@@ -466,20 +472,20 @@
       <!-- Error message -->
       {#if error}
         <div
-          class="flex items-center gap-2 rounded-lg border border-error/30 bg-error/10 px-4 py-2.5"
+          class="flex items-center gap-3 rounded-none border border-error/30 bg-error/5 px-6 py-4"
         >
           <svg
-            class="h-4 w-4 shrink-0 text-error"
+            class="h-5 w-5 shrink-0 text-error"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="1.5"
           >
             <circle cx="12" cy="12" r="10" />
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
-          <p class="text-xs text-error">{error}</p>
+          <p class="font-sans text-sm text-error">{error}</p>
         </div>
       {/if}
     </div>

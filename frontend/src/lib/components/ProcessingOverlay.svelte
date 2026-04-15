@@ -57,12 +57,14 @@
 {#if active}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 z-40 flex items-center justify-center bg-surface-900/85 backdrop-blur-sm"
+    class="fixed inset-0 z-40 flex items-center justify-center bg-surface-900/95"
     onkeydown={(e) => {
       if (e.key === 'Escape' && isTerminal) handleDismiss();
     }}
   >
-    <div class="flex max-w-sm flex-col items-center gap-6 text-center">
+    <div
+      class="flex w-full max-w-lg flex-col items-center gap-12 rounded-none border border-text-primary/20 bg-surface-800 p-12 shadow-[0_2px_8px_rgba(0,0,0,0.02)] text-center"
+    >
       <!-- Progress ring -->
       <div class="relative flex items-center justify-center">
         <svg class="h-32 w-32 -rotate-90" viewBox="0 0 120 120">
@@ -72,8 +74,9 @@
             cy="60"
             r={RADIUS}
             fill="none"
-            stroke="var(--color-surface-600)"
-            stroke-width="6"
+            stroke="var(--color-text-primary)"
+            stroke-opacity="0.1"
+            stroke-width="2"
           />
           <!-- Progress arc -->
           <circle
@@ -86,34 +89,36 @@
                 ? 'var(--color-success)'
                 : 'var(--color-error)'
               : 'var(--color-accent)'}
-            stroke-width="6"
-            stroke-linecap="round"
+            stroke-width="2"
+            stroke-linecap="square"
             stroke-dasharray={CIRCUMFERENCE}
             stroke-dashoffset={strokeDashoffset}
-            class="transition-[stroke-dashoffset] duration-500 ease-out"
+            class="transition-[stroke-dashoffset] duration-500 ease-luxury"
           />
         </svg>
         <div class="absolute flex flex-col items-center">
-          <span class="text-2xl font-bold text-text-primary">
+          <span class="font-serif text-3xl text-text-primary">
             {getProgressPercent(active.progress)}
           </span>
         </div>
       </div>
 
       <!-- Title and stage -->
-      <div class="flex flex-col items-center gap-1">
-        <p class="text-lg font-semibold text-text-primary truncate max-w-[280px]">
+      <div class="flex flex-col items-center gap-4">
+        <h2 class="font-serif text-3xl leading-tight text-text-primary truncate max-w-[280px]">
           {active.title}
+        </h2>
+        <p class="text-xs uppercase tracking-[0.2em] text-text-secondary">
+          {getStageLabel(active.stage)}
         </p>
-        <p class="text-sm text-text-secondary">{getStageLabel(active.stage)}</p>
       </div>
 
       <!-- Actions -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-4">
         {#if isTerminal}
           <button
             onclick={handleDismiss}
-            class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-surface-900 transition-colors hover:bg-accent-hover"
+            class="rounded-none border border-text-primary/20 bg-transparent px-8 py-3 text-xs uppercase tracking-[0.2em] text-text-primary transition-all duration-500 ease-luxury hover:bg-text-primary hover:text-surface-900"
           >
             {active.status === 'completed' ? 'Done' : 'Dismiss'}
           </button>
@@ -121,7 +126,7 @@
           <button
             onclick={handleCancel}
             disabled={cancelling}
-            class="rounded-lg border border-border bg-surface-700 px-5 py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-surface-600 disabled:opacity-50"
+            class="rounded-none border border-text-primary/20 bg-transparent px-8 py-3 text-xs uppercase tracking-[0.2em] text-text-primary transition-all duration-500 ease-luxury hover:bg-surface-700 disabled:opacity-50"
           >
             {cancelling ? 'Cancelling…' : 'Cancel'}
           </button>

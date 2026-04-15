@@ -40,7 +40,6 @@
   let localText: string = $state('');
   let showSaved: boolean = $state(false);
 
-  // Speaker rename state
   let isRenaming: boolean = $state(false);
   let renameInput: HTMLInputElement | undefined = $state();
   let renameText: string = $state('');
@@ -144,7 +143,6 @@
     }
   }
 
-  // Split text into parts for search highlighting
   const textParts = $derived.by(() => {
     if (!searchQuery || isEditing) {
       return [{ text: segment.text, highlight: false }];
@@ -173,35 +171,35 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
-  class="w-full cursor-pointer border-l-2 px-4 py-2.5 text-left transition-colors {isCurrent
-    ? 'border-accent bg-accent/5'
+  class="w-full cursor-pointer border-l-2 px-12 py-8 text-left transition-all duration-500 ease-luxury {isCurrent
+    ? 'border-[#D4AF37] bg-[#1A1A1A]/5'
     : isHovered
-      ? 'border-transparent bg-surface-700/50'
-      : 'border-transparent hover:bg-surface-700'}"
+      ? 'border-[#1A1A1A]/10 bg-transparent'
+      : 'border-transparent hover:border-[#1A1A1A]/10 hover:bg-transparent'}"
   role="option"
   aria-selected={isCurrent}
   tabindex="-1"
   onclick={handleRowClick}
 >
-  <div class="flex items-start gap-3">
+  <div class="flex items-start gap-8">
     <!-- Timestamp -->
     <span
-      class="shrink-0 font-mono text-xs tabular-nums {isCurrent
-        ? 'text-accent'
-        : 'text-text-muted'}"
+      class="shrink-0 font-sans text-xs uppercase tracking-[0.2em] mt-1.5 {isCurrent
+        ? 'text-[#D4AF37]'
+        : 'text-[#1A1A1A]/40'}"
     >
       {timeDisplay}
     </span>
 
     <div class="min-w-0 flex-1">
       <!-- Speaker badge + save indicator -->
-      <div class="mb-1 flex items-center gap-1.5">
+      <div class="mb-4 flex items-center gap-4">
         {#if showSpeakerBadge}
           {#if isRenaming}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="flex items-center gap-1" onclick={(e) => e.stopPropagation()}>
+            <div class="flex items-center gap-3" onclick={(e) => e.stopPropagation()}>
               <span
-                class="inline-block h-2 w-2 shrink-0 rounded-full"
+                class="inline-block h-3 w-3 shrink-0 rounded-none border border-[#1A1A1A]/20"
                 style="background-color: {speakerColor}"
               ></span>
               <input
@@ -209,7 +207,7 @@
                 bind:value={renameText}
                 onkeydown={handleRenameKeydown}
                 onblur={handleRenameBlur}
-                class="w-24 rounded border border-accent/40 bg-surface-900/50 px-1.5 py-0 text-xs text-text-primary outline-none focus:border-accent"
+                class="w-32 border-b border-[#1A1A1A]/20 bg-transparent px-0 py-1 text-xs uppercase tracking-[0.2em] text-[#1A1A1A] outline-none transition-colors duration-500 ease-luxury focus:border-[#D4AF37] rounded-none"
                 maxlength="50"
               />
             </div>
@@ -217,53 +215,36 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
-              class="flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-surface-600"
+              class="flex cursor-pointer items-center gap-3 transition-opacity duration-500 ease-luxury hover:opacity-70"
               onclick={handleBadgeClick}
               role="button"
               tabindex="-1"
               title="Click to rename speaker"
             >
               <span
-                class="inline-block h-2 w-2 shrink-0 rounded-full"
+                class="inline-block h-3 w-3 shrink-0 rounded-none border border-[#1A1A1A]/20"
                 style="background-color: {speakerColor}"
               ></span>
-              <span class="text-xs font-medium text-text-secondary">{speakerDisplayName}</span>
+              <span class="text-xs uppercase tracking-[0.2em] text-[#1A1A1A]"
+                >{speakerDisplayName}</span
+              >
             </div>
           {/if}
         {/if}
         {#if segment.edited && !isEditing}
-          <span class="text-[10px] text-text-muted" title="Edited">
-            <svg
-              class="inline h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
+          <span class="text-[10px] uppercase tracking-[0.2em] text-[#1A1A1A]/40" title="Edited">
+            Edited
           </span>
         {/if}
         {#if isEditing && saving}
-          <span class="text-[10px] text-text-muted">Saving...</span>
+          <span class="text-[10px] uppercase tracking-[0.2em] text-[#1A1A1A]/40">Saving...</span>
         {/if}
         {#if showSaved}
-          <span class="text-[10px] text-accent">Saved</span>
+          <span class="text-[10px] uppercase tracking-[0.2em] text-[#D4AF37]">Saved</span>
         {/if}
         {#if saveError}
-          <span class="text-[10px] text-error" title={saveError}>
-            <svg
-              class="inline h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
+          <span class="text-[10px] uppercase tracking-[0.2em] text-[#1A1A1A]" title={saveError}>
+            Error
           </span>
         {/if}
       </div>
@@ -276,21 +257,21 @@
           oninput={handleInput}
           onblur={handleBlur}
           onkeydown={handleKeydown}
-          class="w-full resize-none border border-accent/30 bg-surface-900/50 px-2 py-1 text-sm leading-relaxed text-text-primary outline-none focus:border-accent"
+          class="w-full resize-none border-b border-[#D4AF37] bg-transparent py-2 font-sans text-lg leading-loose text-[#1A1A1A] outline-none shadow-[0_2px_8px_rgba(0,0,0,0.02)] rounded-none"
           rows="1"
         ></textarea>
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <p
-          class="cursor-text text-sm leading-relaxed {isCurrent
-            ? 'text-text-primary'
-            : 'text-text-secondary'}"
+          class="cursor-text font-sans text-lg leading-loose {isCurrent
+            ? 'text-[#1A1A1A]'
+            : 'text-[#1A1A1A]/80'}"
           onclick={handleTextClick}
         >
           {#each textParts as part}
             {#if part.highlight}
-              <mark class="rounded-sm bg-accent/30 text-inherit">{part.text}</mark>
+              <mark class="bg-[#D4AF37]/20 text-inherit px-1 rounded-none">{part.text}</mark>
             {:else}
               {part.text}
             {/if}

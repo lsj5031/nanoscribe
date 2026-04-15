@@ -50,7 +50,6 @@
   const capabilities = $derived(getCapabilities());
   const hasContent = $derived(hasSegments());
 
-  // Initialize editor on mount
   $effect(() => {
     if (memoId) {
       initEditor(memoId);
@@ -60,7 +59,6 @@
     };
   });
 
-  // Flush pending saves before leaving the page
   $effect(() => {
     function handleBeforeUnload() {
       flushSave();
@@ -72,7 +70,6 @@
     };
   });
 
-  // Connect transcript seek callback to waveform
   $effect(() => {
     if (transcriptPane && waveformPane) {
       transcriptPane.setSeekCallback((ms: number) => {
@@ -95,7 +92,6 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Don't interfere with form elements (except Escape)
     if (
       e.target instanceof HTMLInputElement ||
       e.target instanceof HTMLTextAreaElement ||
@@ -267,49 +263,39 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if loading}
-  <div class="flex h-full items-center justify-center">
-    <div class="flex flex-col items-center gap-4">
-      <div class="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-accent"></div>
-      <p class="text-sm text-text-secondary">Loading editor…</p>
+  <div class="flex h-full items-center justify-center bg-[#F9F8F6]">
+    <div class="flex flex-col items-center gap-12">
+      <div class="h-10 w-10 animate-spin border-t border-l border-[#1A1A1A]"></div>
+      <p class="text-xs uppercase tracking-[0.2em] font-sans text-[#1A1A1A]/60">Loading editor…</p>
     </div>
   </div>
 {:else if error}
-  <div class="flex h-full items-center justify-center px-4">
-    <div class="flex max-w-md flex-col items-center gap-4 text-center">
-      <div class="rounded-full bg-error/10 p-4">
+  <div class="flex h-full items-center justify-center p-12 bg-[#F9F8F6]">
+    <div class="flex max-w-md flex-col items-center gap-12 text-center">
+      <div class="border border-[#1A1A1A]/20 p-8 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
         <svg
-          class="h-8 w-8 text-error"
+          class="h-8 w-8 text-[#1A1A1A]"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          stroke-width="2"
+          stroke-width="1"
         >
           <circle cx="12" cy="12" r="10" />
           <line x1="15" y1="9" x2="9" y2="15" />
           <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
       </div>
-      <p class="text-sm text-text-secondary">{error}</p>
-      <div class="flex gap-3">
+      <p class="text-sm font-sans text-[#1A1A1A]">{error}</p>
+      <div class="flex gap-8">
         <button
           onclick={() => memoId && initEditor(memoId)}
-          class="flex items-center gap-2 rounded-lg border border-border bg-surface-800 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-700"
+          class="flex items-center gap-4 border border-[#1A1A1A]/20 bg-[#F9F8F6] px-8 py-4 text-xs uppercase tracking-[0.2em] text-[#1A1A1A] transition-colors duration-500 ease-luxury hover:border-[#D4AF37] hover:text-[#D4AF37] rounded-none"
         >
-          <svg
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="23,4 23,10 17,10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
           Retry
         </button>
         <button
           onclick={goBack}
-          class="rounded-lg border border-border bg-surface-800 px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-700"
+          class="border border-[#1A1A1A]/20 bg-[#F9F8F6] px-8 py-4 text-xs uppercase tracking-[0.2em] text-[#1A1A1A] transition-colors duration-500 ease-luxury hover:border-[#D4AF37] hover:text-[#D4AF37] rounded-none"
         >
           Back to Library
         </button>
@@ -317,20 +303,20 @@
     </div>
   </div>
 {:else}
-  <div class="flex h-full flex-col">
+  <div class="flex h-full flex-col bg-[#F9F8F6] font-sans text-[#1A1A1A]">
     <!-- Floating toolbar -->
-    <div class="flex shrink-0 items-center gap-3 border-b border-border bg-surface-800 px-4 py-2">
+    <div class="flex shrink-0 items-center gap-8 border-b border-[#1A1A1A]/20 px-12 py-8">
       <button
         onclick={goBack}
-        class="flex items-center gap-1 rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary"
+        class="flex items-center gap-2 p-2 text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
         aria-label="Back to library"
       >
-        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
           <path d="M15 18l-6-6 6-6" />
         </svg>
       </button>
 
-      <h1 class="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
+      <h1 class="min-w-0 flex-1 truncate text-2xl font-serif text-[#1A1A1A]">
         {memo?.title ?? 'Untitled'}
       </h1>
 
@@ -339,23 +325,15 @@
         <button
           onclick={() => (exportMenuOpen = !exportMenuOpen)}
           disabled={!hasContent}
-          class="rounded-md px-3 py-1.5 text-xs text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-40 disabled:pointer-events-none"
+          class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] disabled:opacity-40 disabled:pointer-events-none rounded-none"
           title="Export transcript"
         >
-          <svg
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7,10 12,15 17,10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
+          Export
         </button>
         {#if exportMenuOpen}
-          <ExportMenu {memoId} onclose={() => (exportMenuOpen = false)} />
+          <div class="absolute right-0 top-full mt-2 z-50">
+            <ExportMenu {memoId} onclose={() => (exportMenuOpen = false)} />
+          </div>
         {/if}
       </div>
 
@@ -364,23 +342,14 @@
         <button
           onclick={handleCopyTranscript}
           disabled={!hasContent}
-          class="rounded-md px-3 py-1.5 text-xs text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary disabled:opacity-40 disabled:pointer-events-none"
+          class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] disabled:opacity-40 disabled:pointer-events-none rounded-none"
           title="Copy transcript"
         >
-          <svg
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
+          Copy
         </button>
         {#if copyTooltip}
           <span
-            class="absolute -top-7 left-1/2 -translate-x-1/2 rounded bg-surface-600 px-2 py-1 text-xs text-accent whitespace-nowrap"
+            class="absolute -bottom-10 left-1/2 -translate-x-1/2 border border-[#1A1A1A]/20 bg-[#F9F8F6] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#D4AF37] whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
           >
             {copyTooltip}
           </span>
@@ -391,42 +360,28 @@
       {#if capabilities.speaker_diarization && hasContent}
         <button
           onclick={handleRerunDiarization}
-          class="rounded-md px-3 py-1.5 text-xs text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary"
+          class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
           title="Re-run diarization"
         >
-          <svg
-            class="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
+          Diarize
         </button>
       {/if}
 
       <!-- Re-run transcription -->
       <button
         onclick={handleRerun}
-        class="rounded-md px-3 py-1.5 text-xs text-text-muted transition-colors hover:bg-surface-700 hover:text-text-primary"
+        class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
         title="Re-run transcription"
       >
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23,4 23,10 17,10" />
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-        </svg>
+        Transcribe
       </button>
     </div>
 
     <!-- Two-pane layout -->
-    <div bind:this={containerEl} class="relative flex flex-1 overflow-hidden">
+    <div bind:this={containerEl} class="relative flex flex-1 overflow-hidden p-0 gap-0">
       <!-- Left pane: Waveform & Transport -->
       <div
-        class="flex shrink-0 flex-col overflow-hidden border-r border-border"
+        class="flex shrink-0 flex-col overflow-hidden border-r border-[#1A1A1A]/20 bg-[#F9F8F6] shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
         style="width: {leftPct}%"
       >
         <WaveformPane bind:this={waveformPane} />
@@ -435,8 +390,8 @@
       <!-- Resizable divider -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
-        class="group relative z-10 flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-surface-800 transition-colors hover:bg-accent/20 {isDragging
-          ? 'bg-accent/20'
+        class="group relative z-10 flex w-8 shrink-0 cursor-col-resize items-center justify-center bg-[#F9F8F6] transition-colors duration-500 ease-luxury hover:bg-[#1A1A1A]/5 {isDragging
+          ? 'bg-[#1A1A1A]/5'
           : ''}"
         onmousedown={handleDividerMouseDown}
         role="separator"
@@ -446,14 +401,14 @@
         aria-valuemax={70}
       >
         <div
-          class="h-8 w-0.5 rounded-full bg-surface-500 transition-colors group-hover:bg-accent {isDragging
-            ? 'bg-accent'
+          class="h-full w-px bg-[#1A1A1A]/10 transition-colors duration-500 ease-luxury group-hover:bg-[#D4AF37] {isDragging
+            ? 'bg-[#D4AF37]'
             : ''}"
         ></div>
       </div>
 
       <!-- Right pane: Transcript -->
-      <div class="min-w-0 flex-1 overflow-hidden">
+      <div class="min-w-0 flex-1 overflow-hidden bg-[#F9F8F6]">
         <TranscriptPane bind:this={transcriptPane} />
       </div>
     </div>

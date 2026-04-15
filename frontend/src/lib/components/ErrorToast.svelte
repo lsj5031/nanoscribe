@@ -34,13 +34,13 @@
 
 {#if toasts.length > 0}
   <div
-    class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"
+    class="fixed bottom-6 right-6 z-50 flex flex-col gap-4"
     role="region"
     aria-label="Notifications"
   >
     {#each toasts as toast (toast.id)}
       <div
-        class="flex items-start gap-3 rounded-xl border bg-surface-800 px-4 py-3 shadow-xl animate-slide-up {borderColor[
+        class="flex items-start gap-4 rounded-none border bg-surface-800 px-6 py-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-shadow duration-500 ease-luxury hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] animate-slide-up {borderColor[
           toast.type
         ]}"
         role="alert"
@@ -51,17 +51,19 @@
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+          stroke-width="1.5"
+          stroke-linecap="square"
+          stroke-linejoin="miter"
         >
           <path d={iconPath(toast.type)} />
         </svg>
-        <p class="min-w-0 flex-1 text-sm text-text-primary">{toast.message}</p>
+        <p class="min-w-0 flex-1 font-sans text-sm text-text-primary leading-relaxed">
+          {toast.message}
+        </p>
         {#if toast.dismissible}
           <button
             onclick={() => dismissToast(toast.id)}
-            class="shrink-0 rounded-lg p-1 text-text-muted transition-colors hover:text-text-primary"
+            class="shrink-0 rounded-none p-1 text-text-muted transition-colors duration-500 ease-luxury hover:text-text-primary"
             aria-label="Dismiss"
           >
             <svg
@@ -69,7 +71,7 @@
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.5"
             >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -93,6 +95,6 @@
     }
   }
   .animate-slide-up {
-    animation: slide-up 0.2s ease-out;
+    animation: slide-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 </style>
