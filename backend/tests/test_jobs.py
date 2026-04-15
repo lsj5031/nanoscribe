@@ -60,6 +60,7 @@ def _insert_job(
     db_path: Path,
     memo_id: str,
     job_id: str | None = None,
+    job_type: str = "transcribe",
     status: str = "queued",
     stage: str | None = None,
     progress: float = 0.0,
@@ -77,11 +78,12 @@ def _insert_job(
             INSERT INTO jobs
                 (id, memo_id, job_type, status, stage, progress,
                  attempt_count, error_code, error_message, created_at, started_at, finished_at)
-            VALUES (?, ?, 'transcribe', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
                 memo_id,
+                job_type,
                 status,
                 stage,
                 progress,
@@ -185,6 +187,38 @@ class TestStateTransitions:
         job = jobs_service.get_job(tmp_db, job_id)
         assert job is not None
         assert job["status"] == "cancelled"
+
+    def test_valid_diarize_pipeline_transition(self, tmp_db: Path):
+        """Diarize-only jobs skip transcribing: preprocessing → diarizing."""
+        memo_id = _insert_memo(tmp_db)
+        job_id = _insert_job(tmp_db, memo_id, job_type="diarize")
+
+        # queued → preprocessing
+        jobs_service.transition_job(tmp_db, job_id, "preprocessing")
+        job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
+        assert job["status"] == "preprocessing"
+        assert job["job_type"] == "diarize"
+
+        # preprocessing → diarizing (skips transcribing)
+        jobs_service.transition_job(tmp_db, job_id, "diarizing")
+        job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
+        assert job["status"] == "diarizing"
+        assert job["stage"] == "diarizing"
+
+        # diarizing → finalizing
+        jobs_service.transition_job(tmp_db, job_id, "finalizing")
+        job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
+        assert job["status"] == "finalizing"
+
+        # finalizing → completed
+        jobs_service.transition_job(tmp_db, job_id, "completed")
+        job = jobs_service.get_job(tmp_db, job_id)
+        assert job is not None
+        assert job["status"] == "completed"
+        assert job["progress"] == 1.0
 
     def test_cannot_transition_from_terminal(self, tmp_db: Path):
         memo_id = _insert_memo(tmp_db)
