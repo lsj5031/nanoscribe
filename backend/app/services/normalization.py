@@ -175,8 +175,8 @@ def extract_waveform_peaks(
         trim_len = n_buckets * (total_samples // n_buckets)
         if trim_len > 0:
             trimmed = audio[:trim_len].reshape(n_buckets, -1)
-            # Normalize to [0, 1] range (32767 is max for int16)
-            bucket_peaks = np.max(np.abs(trimmed), axis=1) / 32767.0
+            # Cast to int32 before abs to avoid int16 overflow: abs(-32768) overflows in int16
+            bucket_peaks = np.max(np.abs(trimmed.astype(np.int32)), axis=1) / 32767.0
             peaks = [round(float(p), 4) for p in bucket_peaks]
         else:
             peaks = []
@@ -185,7 +185,7 @@ def extract_waveform_peaks(
         # When trim_len == 0 (very short audio), all samples are the remainder
         if trim_len < total_samples:
             remainder = audio[trim_len:]
-            peak = float(np.max(np.abs(remainder))) / 32767.0
+            peak = float(np.max(np.abs(remainder.astype(np.int32)))) / 32767.0
             peaks.append(round(peak, 4))
 
         # Write JSON

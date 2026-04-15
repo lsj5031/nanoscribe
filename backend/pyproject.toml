@@ -29,6 +29,14 @@ select = ["E", "F", "I", "W"]
 [tool.ty.environment]
 python-version = "3.10"
 
+[tool.ty.rules]
+# Docker-only packages (funasr, torch, speakerlab, modelscope, soundfile, torchaudio)
+# are not available in native CI — suppress import resolution errors globally.
+unresolved-import = "ignore"
+# Inline ty:ignore comments needed in Docker may be unused in native CI (where
+# unresolved modules are treated as Unknown), so suppress the unused-warning.
+unused-ignore-comment = "ignore"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

@@ -7,22 +7,51 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  backend-check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build dev image
-        run: make build-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Start container
-        run: docker compose up -d
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
 
-      - name: Wait for container readiness
-        run: sleep 5
+      - name: ruff format --check
+        run: ruff format --check .
 
-      - name: Backend checks
-        run: make backend-check
+      - name: ruff check
+        run: ruff check .
 
-      - name: Frontend checks
-        run: make frontend-check
+      - name: ty check
+        run: ty check .
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: svelte-check
+        run: pnpm check
+
+      - name: prettier format check
+        run: pnpm format:check

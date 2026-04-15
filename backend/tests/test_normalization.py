@@ -546,3 +546,183 @@ class TestNormalizationIntegration:
 
         error_msg = str(exc_info.value)
         assert len(error_msg) > 0, "Error message should not be empty"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Waveform vectorization edge cases
+# ---------------------------------------------------------------------------
+
+
+def _write_raw_normalized_wav(memo_dir: Path, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1) -> Path:
+    """Write a normalized WAV directly (bypass ffmpeg) for unit-testing waveform extraction."""
+    path = memo_dir / "normalized.wav"
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_data)
+    path.write_bytes(buf.getvalue())
+    return path
+
+
+class TestWaveformVeryShortAudio:
+    """Edge case: audio shorter than WAVEFORM_MIN_PEAKS buckets."""
+
+    def test_single_sample_audio(self, memo_dir: Path) -> None:
+        """A single-sample WAV should produce exactly one peak."""
+        # 1 sample at 16kHz → 0.0000625s → n_buckets = max(50, 0) = 50
+        # total_samples=1 < n_buckets=50 → trim_len=0 → all in remainder
+        pcm = struct.pack("<h", 16384)  # ~half-scale sine
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) == 1, f"Expected 1 peak for 1 sample, got {len(data)}"
+        assert 0.0 < data[0] <= 1.0, f"Peak {data[0]} outside valid range"
+        assert abs(data[0] - 0.5) < 0.01, f"Expected ~0.5 for 16384/32767, got {data[0]}"
+
+    def test_few_samples_audio(self, memo_dir: Path) -> None:
+        """Audio with fewer samples than WAVEFORM_MIN_PEAKS should still produce peaks."""
+        # 10 samples at 16kHz → 0.625ms → n_buckets = 50
+        # total_samples=10 < n_buckets=50 → trim_len=0 → all in remainder
+        samples = b"".join(struct.pack("<h", int(32767 * 0.8 * (1 if i % 2 == 0 else -1))) for i in range(10))
+        normalized_path = _write_raw_normalized_wav(memo_dir, samples)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) == 1, f"Expected 1 peak (remainder), got {len(data)}"
+        assert data[0] >= 0.7, f"Should have high peak for 0.8-amplitude audio, got {data[0]}"
+
+    def test_very_short_silent_audio(self, memo_dir: Path) -> None:
+        """Very short silent audio should produce a near-zero peak."""
+        pcm = b"\x00\x00" * 5  # 5 silent samples
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) >= 1, "Should produce at least one peak"
+        assert data[0] < 0.01, f"Silent audio peak should be near zero, got {data[0]}"
+
+    def test_short_audio_produces_valid_json(self, memo_dir: Path) -> None:
+        """Very short audio waveform.json is valid JSON with numeric peaks in [0,1]."""
+        pcm = b"".join(struct.pack("<h", int(32767 * 0.3)) for _ in range(20))
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert isinstance(data, list)
+        for peak in data:
+            assert isinstance(peak, (int, float))
+            assert 0.0 <= peak <= 1.0
+
+
+class TestWaveformEmptyAudio:
+    """Edge case: WAV with zero audio frames."""
+
+    def test_zero_frames_wav(self, memo_dir: Path) -> None:
+        """A valid WAV with zero frames should produce an empty peaks list."""
+        normalized_path = _write_raw_normalized_wav(memo_dir, b"")
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert data == [], f"Expected empty list for 0-frame audio, got {data}"
+
+    def test_zero_frames_creates_valid_json(self, memo_dir: Path) -> None:
+        """Zero-frame audio should still create a valid waveform.json file."""
+        normalized_path = _write_raw_normalized_wav(memo_dir, b"")
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        waveform_path = memo_dir / "waveform.json"
+        assert waveform_path.exists(), "waveform.json should be created even for empty audio"
+        data = json.loads(waveform_path.read_text())
+        assert isinstance(data, list)
+
+
+class TestWaveformBoundarySamples:
+    """Edge case: boundary sample values (max, min, zero)."""
+
+    def test_max_amplitude_sample(self, memo_dir: Path) -> None:
+        """A sample at max int16 (32767) should produce peak of 1.0."""
+        # Enough samples to fill at least one bucket
+        pcm = struct.pack("<h", 32767) * 8000  # 0.5s at 16kHz
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) > 0
+        assert max(data) == 1.0, f"Max amplitude should produce peak 1.0, got {max(data)}"
+
+    def test_min_amplitude_sample(self, memo_dir: Path) -> None:
+        """A sample at min int16 (-32768) should produce peak near 1.0.
+
+        Note: abs(-32768) / 32767.0 ≈ 1.0003 due to asymmetric int16 range,
+        so we use approximate comparison.
+        """
+        pcm = struct.pack("<h", -32768) * 8000  # 0.5s at 16kHz
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) > 0
+        assert abs(max(data) - 1.0) < 0.001, f"Min amplitude should produce peak ≈1.0, got {max(data)}"
+
+    def test_alternating_max_min_sample(self, memo_dir: Path) -> None:
+        """Alternating max/min samples should produce peak of 1.0."""
+        pcm = b"".join(struct.pack("<h", 32767 if i % 2 == 0 else -32768) for i in range(8000))
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) > 0
+        assert abs(max(data) - 1.0) < 0.001
+
+    def test_all_zero_samples(self, memo_dir: Path) -> None:
+        """All-zero samples should produce all-zero peaks."""
+        pcm = b"\x00\x00" * 8000  # 0.5s of silence at 16kHz
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        assert len(data) > 0
+        assert all(p == 0.0 for p in data), f"Silent audio should have all-zero peaks, got max={max(data)}"
+
+
+class TestWaveformExactBucketBoundary:
+    """Edge case: audio length is an exact multiple of bucket count."""
+
+    def test_exact_bucket_multiple_no_remainder(self, memo_dir: Path) -> None:
+        """When total_samples is exactly divisible by n_buckets, there should be no remainder peak."""
+        # 0.5s at 16kHz = 8000 samples; n_buckets = max(50, int(0.5*100)) = 50
+        # 8000 / 50 = 160 → exact division, no remainder
+        pcm = b"".join(struct.pack("<h", int(32767 * 0.5)) for _ in range(8000))
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        # With exact division, len(data) should equal n_buckets (50)
+        assert len(data) == 50, f"Expected 50 peaks (no remainder), got {len(data)}"
+
+    def test_non_divisible_length_has_remainder(self, memo_dir: Path) -> None:
+        """When total_samples is not divisible by n_buckets, a remainder peak is appended."""
+        # 0.5s at 16kHz = 8000 samples; n_buckets = 50
+        # Use 8003 samples → 8000 fit in reshape, 3 remain
+        pcm = b"".join(struct.pack("<h", int(32767 * 0.5)) for _ in range(8003))
+        normalized_path = _write_raw_normalized_wav(memo_dir, pcm)
+
+        extract_waveform_peaks(normalized_path, memo_dir)
+
+        data = json.loads((memo_dir / "waveform.json").read_text())
+        # 50 buckets + 1 remainder = 51
+        assert len(data) == 51, f"Expected 51 peaks (50 + 1 remainder), got {len(data)}"

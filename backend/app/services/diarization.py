@@ -82,9 +82,9 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
         # removed in torchaudio >= 2.0.  Provide a no-op stub so the import
         # chain doesn't crash.
         if not hasattr(torchaudio, "set_audio_backend"):
-            torchaudio.set_audio_backend = lambda _: None  # type: ignore[attr-defined]
+            torchaudio.set_audio_backend = lambda _: None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         if not hasattr(torchaudio, "get_audio_backend"):
-            torchaudio.get_audio_backend = lambda: None  # type: ignore[attr-defined]
+            torchaudio.get_audio_backend = lambda: None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
         # Monkey-patch torchaudio.load to use soundfile instead of torchcodec.
         # torchcodec requires libnvrtc.so.13 which is unavailable with
@@ -100,7 +100,7 @@ def run_diarization(audio_path: Path) -> list[dict[str, Any]]:
         try:
             torchaudio.load("/dev/null")  # quick probe
         except Exception:
-            torchaudio.load = _soundfile_load  # type: ignore[assignment]
+            torchaudio.load = _soundfile_load  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
             logger.debug("torchaudio_load_patched_soundfile")
 
         from speakerlab.bin.infer_diarization import Diarization3Dspeaker

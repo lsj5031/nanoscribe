@@ -92,7 +92,7 @@ class TestHealthEndpoint:
         import app.services.capabilities as cap_mod
 
         original = cap_mod._get_modelscope_cache_dir
-        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"  # ty:ignore[invalid-assignment]
         try:
             resp = client.get("/api/system/health")
             assert resp.json()["model_ready"] is False
@@ -358,7 +358,7 @@ class TestCapabilitiesRuntimeState:
         import app.services.capabilities as cap_mod
 
         original = cap_mod._get_modelscope_cache_dir
-        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "empty_cache"  # ty:ignore[invalid-assignment]
         try:
             resp = client.get("/api/system/capabilities")
             data = resp.json()
@@ -619,7 +619,7 @@ class TestReadinessEndpoint:
         import app.services.capabilities as cap_mod
 
         original = cap_mod._get_modelscope_cache_dir
-        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "nonexistent_cache"
+        cap_mod._get_modelscope_cache_dir = lambda: tmp_path / "nonexistent_cache"  # ty:ignore[invalid-assignment]
 
         try:
             resp = client.get("/api/system/readiness")
@@ -641,7 +641,7 @@ class TestReadinessEndpoint:
         vad_dir.mkdir(parents=True)
 
         original = cap_mod._get_modelscope_cache_dir
-        cap_mod._get_modelscope_cache_dir = lambda: cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: cache_dir  # ty:ignore[invalid-assignment]
 
         try:
             resp = client.get("/api/system/readiness")
@@ -663,7 +663,7 @@ class TestReadinessEndpoint:
         (vad_dir / "model.pb").write_text("fake model")
 
         original = cap_mod._get_modelscope_cache_dir
-        cap_mod._get_modelscope_cache_dir = lambda: cache_dir
+        cap_mod._get_modelscope_cache_dir = lambda: cache_dir  # ty:ignore[invalid-assignment]
 
         try:
             resp = client.get("/api/system/readiness")

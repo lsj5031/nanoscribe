@@ -1,6 +1,0 @@
-{
-  "title_override": {"title": "Custom Title", "status": 201},
-  "language_override": {"language_override": "zh", "status": 201},
-  "hotwords": {"hotwords": "meeting,agenda", "status": 201},
-  "enable_diarization": {"enable_diarization": true, "status": 201}
-}

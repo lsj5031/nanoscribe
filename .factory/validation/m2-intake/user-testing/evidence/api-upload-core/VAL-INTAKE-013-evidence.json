@@ -1,5 +1,0 @@
-{
-  "interview-2026-04-13.mp3": {"expected_title": "interview-2026-04-13", "observed_title": "interview-2026-04-13", "pass": true},
-  "simple.wav": {"expected_title": "simple", "observed_title": "simple", "pass": true},
-  "file.with.dots.in.name.ogg": {"expected_title": "file.with.dots.in.name", "observed_title": "file.with.dots.in.name", "pass": true}
-}

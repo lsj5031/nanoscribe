@@ -25,6 +25,9 @@ frontend/.vite/
 .env.*
 !.env.example
 
+# ── Factory / internal tooling ────────────────
+.factory/
+
 # ── Model caches (mounted, not repo content) ──
 .modelscope_cache/
 
