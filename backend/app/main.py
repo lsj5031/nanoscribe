@@ -66,6 +66,12 @@ async def _lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
 
     await start_worker(db_path)
 
+    # Store the main event loop in the SSE manager so that worker
+    # threads can publish progress events via call_soon_threadsafe.
+    from app.services.sse import get_sse_manager
+
+    get_sse_manager().set_main_loop(asyncio.get_running_loop())
+
     # Verify FunASR model disk cache in a background thread so the
     # readiness status flips to "ready" without requiring the first
     # transcription job to trigger the download.

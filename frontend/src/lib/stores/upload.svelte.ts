@@ -4,6 +4,7 @@
  */
 
 import { showError, showWarning } from '$lib/stores/toasts.svelte';
+import { getCapabilities } from '$lib/stores/capabilities.svelte';
 
 export interface UploadJob {
   memoId: string;
@@ -12,6 +13,8 @@ export interface UploadJob {
   status: string;
   stage: string;
   progress: number;
+  /** Sub-stage detail, e.g. "Chunk 3/12" during transcription */
+  detail?: string;
 }
 
 interface UploadState {
@@ -85,6 +88,12 @@ export async function uploadFiles(files: File[]): Promise<void> {
     formData.append('files[]', file);
   }
 
+  // Auto-enable diarization when the capability is available
+  const capabilities = getCapabilities();
+  if (capabilities.speaker_diarization) {
+    formData.append('enable_diarization', 'true');
+  }
+
   try {
     const res = await fetch('/api/memos', {
       method: 'POST',
@@ -145,9 +154,17 @@ function connectSSE(jobId: string): void {
     try {
       const data = JSON.parse(e.data);
       if (state.active && state.active.jobId === jobId) {
+        let detail: string | undefined;
+        if (data.detail) {
+          const d = data.detail;
+          if (d.chunks_done != null && d.total_chunks != null) {
+            detail = `Chunk ${d.chunks_done}/${d.total_chunks}`;
+          }
+        }
         state.active = {
           ...state.active,
-          progress: data.progress ?? state.active.progress
+          progress: data.progress ?? state.active.progress,
+          detail
         };
       }
     } catch {

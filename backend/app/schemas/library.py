@@ -18,6 +18,8 @@ class MemoCard(BaseModel):
     status: str
     updated_at: str
     waveform_url: str | None = None
+    progress: float = 0.0
+    stage: str | None = None
 
 
 class JobSummary(BaseModel):

@@ -13,6 +13,8 @@ export interface MemoCard {
   status: string;
   updated_at: string;
   waveform_url: string | null;
+  progress: number;
+  stage: string | null;
 }
 
 export type ViewMode = 'grid' | 'list';
@@ -106,19 +108,16 @@ export function setViewMode(mode: ViewMode): void {
 export function setQuery(q: string): void {
   state.query = q;
   state.page = 1;
-  fetchMemos();
 }
 
 export function setSort(sort: SortMode): void {
   state.sort = sort;
   state.page = 1;
-  fetchMemos();
 }
 
 export function setStatusFilter(status: string | null): void {
   state.statusFilter = status;
   state.page = 1;
-  fetchMemos();
 }
 
 export function setPage(page: number): void {
@@ -128,8 +127,10 @@ export function setPage(page: number): void {
 
 /**
  * Fetch memos from the API with current filters.
+ * When `append` is true, new items are appended to the existing list (load-more).
+ * When false (default), the list is replaced (fresh fetch / filter change).
  */
-export async function fetchMemos(): Promise<void> {
+export async function fetchMemos(append = false): Promise<void> {
   state.loading = true;
   state.error = null;
 
@@ -151,7 +152,13 @@ export async function fetchMemos(): Promise<void> {
       throw new Error(`Failed to fetch memos: ${res.status}`);
     }
     const data = await res.json();
-    state.memos = data.items ?? [];
+    const newItems: MemoCard[] = data.items ?? [];
+
+    if (append) {
+      state.memos = [...state.memos, ...newItems];
+    } else {
+      state.memos = newItems;
+    }
     state.total = data.total ?? 0;
 
     // Connect SSE for any active jobs
@@ -162,6 +169,22 @@ export async function fetchMemos(): Promise<void> {
   } finally {
     state.loading = false;
   }
+}
+
+/**
+ * Whether more pages are available to load.
+ */
+export function hasMore(): boolean {
+  return state.memos.length < state.total;
+}
+
+/**
+ * Load the next page of memos, appending to the existing list.
+ */
+export async function loadMore(): Promise<void> {
+  if (!hasMore() || state.loading) return;
+  state.page += 1;
+  await fetchMemos(true);
 }
 
 /**
@@ -253,14 +276,25 @@ function connectJobSSE(memoId: string, jobId: string): void {
 
   const updateMemo = (data: { status?: string; stage?: string; progress?: number }) => {
     const memo = state.memos.find((m) => m.id === memoId);
-    if (memo && data.status) {
-      memo.status = data.status;
-    }
+    if (!memo) return;
+    if (data.status) memo.status = data.status;
+    if (data.stage) memo.stage = data.stage;
+    if (data.progress != null) memo.progress = data.progress;
   };
 
   es.addEventListener('job.stage', (e: MessageEvent) => {
     try {
-      updateMemo(JSON.parse(e.data));
+      const data = JSON.parse(e.data);
+      updateMemo(data);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  es.addEventListener('job.progress', (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data);
+      updateMemo(data);
     } catch {
       /* ignore */
     }
@@ -268,7 +302,14 @@ function connectJobSSE(memoId: string, jobId: string): void {
 
   const handleTerminal = (e: MessageEvent) => {
     try {
-      updateMemo(JSON.parse(e.data));
+      const data = JSON.parse(e.data);
+      updateMemo(data);
+      // Clean up progress/stage on terminal states for data cleanliness
+      const memo = state.memos.find((m) => m.id === memoId);
+      if (memo) {
+        memo.progress = data.status === 'completed' ? 1.0 : memo.progress;
+        memo.stage = null;
+      }
     } catch {
       /* ignore */
     }
@@ -332,7 +373,9 @@ export async function refreshMemo(memoId: string): Promise<void> {
         speaker_count: detail.speaker_count,
         status: detail.status,
         updated_at: detail.updated_at,
-        waveform_url: state.memos[idx].waveform_url // keep existing waveform URL
+        waveform_url: state.memos[idx].waveform_url, // keep existing waveform URL
+        progress: detail.latest_job?.progress ?? state.memos[idx].progress,
+        stage: detail.latest_job?.stage ?? state.memos[idx].stage
       };
     }
   } catch {
@@ -358,9 +401,13 @@ export function formatDuration(ms: number | null): string {
 
 /**
  * Format an ISO timestamp to a relative time string.
+ * Returns '—' for null, empty, or unparseable timestamps.
  */
 export function formatRelativeTime(isoString: string): string {
+  if (!isoString) return '—';
   const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '—';
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -405,11 +452,11 @@ export function getStatusLabel(status: string): string {
     case 'queued':
       return 'Queued';
     case 'preprocessing':
-      return 'Preprocessing';
+      return 'Preparing audio';
     case 'transcribing':
       return 'Transcribing';
     case 'diarizing':
-      return 'Diarizing';
+      return 'Identifying speakers';
     case 'finalizing':
       return 'Finalizing';
     case 'completed':

@@ -109,8 +109,15 @@ def list_memos(
         offset = (page - 1) * page_size
         data_sql = (
             f"SELECT memos.id, memos.title, memos.duration_ms, memos.speaker_count, "
-            f"memos.status, memos.updated_at "
-            f"FROM memos {where} "
+            f"memos.status, memos.updated_at, "
+            f"j.progress AS job_progress, j.stage AS job_stage "
+            f"FROM memos "
+            f"LEFT JOIN ("
+            f"  SELECT memo_id, progress, stage, "
+            f"    ROW_NUMBER() OVER (PARTITION BY memo_id ORDER BY created_at DESC) AS rn "
+            f"  FROM jobs"
+            f") j ON j.memo_id = memos.id AND j.rn = 1 "
+            f"{where} "
             f"ORDER BY {order} "
             f"LIMIT ? OFFSET ?"
         )
@@ -127,6 +134,8 @@ def list_memos(
                     "status": row["status"],
                     "updated_at": row["updated_at"],
                     "waveform_url": None,  # Will be populated by API layer if file exists
+                    "progress": row["job_progress"] if row["job_progress"] is not None else 0.0,
+                    "stage": row["job_stage"],
                 }
             )
 

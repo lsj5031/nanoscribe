@@ -103,7 +103,10 @@
         e.stopPropagation();
         toggleSort();
       }}
-      class="flex items-center gap-2 rounded-none border-b border-text-primary bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] text-text-secondary duration-500 ease-luxury hover:border-accent hover:text-accent"
+      class="flex items-center gap-2 rounded-none border-b bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:border-accent hover:text-accent {sortOpen ||
+      sort !== 'recent'
+        ? 'border-accent text-accent'
+        : 'border-text-primary text-text-secondary'}"
       aria-label="Sort"
     >
       <svg
@@ -170,7 +173,8 @@
         e.stopPropagation();
         toggleFilter();
       }}
-      class="flex items-center gap-2 rounded-none border-b bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:border-accent hover:text-accent {statusFilter
+      class="flex items-center gap-2 rounded-none border-b bg-transparent px-2 py-1.5 text-xs uppercase tracking-[0.2em] duration-500 ease-luxury hover:border-accent hover:text-accent {filterOpen ||
+      statusFilter
         ? 'border-accent text-accent'
         : 'border-text-primary text-text-secondary'}"
       aria-label="Filter by status"

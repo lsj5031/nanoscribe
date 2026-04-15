@@ -23,7 +23,9 @@
     setQuery,
     getQuery,
     getSort,
-    getStatusFilter
+    getStatusFilter,
+    hasMore,
+    loadMore
   } from '$lib/stores/library.svelte';
 
   let fileInput: HTMLInputElement | undefined = $state();
@@ -41,6 +43,7 @@
   const query = $derived(getQuery());
   const sort = $derived(getSort());
   const statusFilter = $derived(getStatusFilter());
+  const canLoadMore = $derived(hasMore());
 
   // First-run detection via localStorage
   const hasVisitedBefore = $state(
@@ -64,15 +67,16 @@
   // Recording only if both backend capability and browser MediaRecorder support
   const canRecord = $derived(capabilities.recording && isMediaRecorderSupported());
 
-  // Fetch memos on mount and when returning to the page
+  // Cleanup SSE connections on unmount;
+  // initial + reactive fetches are handled by the query/sort/filter $effect below.
   $effect(() => {
-    fetchMemos();
     return () => cleanup();
   });
 
-  // Re-fetch when sort/filter changes
+  // Re-fetch when query/sort/filter changes
   $effect(() => {
     // These reads make the effect reactive to changes
+    query;
     sort;
     statusFilter;
     fetchMemos();
@@ -461,12 +465,21 @@
           </div>
         {/if}
 
-        <!-- Loading indicator for pagination -->
+        <!-- Load more / loading indicator -->
         {#if loading && memos.length > 0}
           <div class="flex justify-center py-6">
             <div
               class="h-6 w-6 animate-spin rounded-none border-2 border-text-primary/20 border-t-accent duration-500 ease-luxury"
             ></div>
+          </div>
+        {:else if canLoadMore}
+          <div class="flex justify-center py-6">
+            <button
+              onclick={loadMore}
+              class="rounded-none border-b border-text-primary px-6 py-2 text-xs uppercase tracking-[0.2em] text-text-secondary duration-500 ease-luxury hover:border-accent hover:text-accent"
+            >
+              Load more
+            </button>
           </div>
         {/if}
       </div>

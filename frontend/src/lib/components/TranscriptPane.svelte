@@ -249,10 +249,9 @@
       </div>
     {:else}
       {#each segments as segment, i (segment.id)}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           data-segment-index={i}
-          role="option"
+          role="presentation"
           onmouseenter={() => handleSegmentHover(i)}
           onmouseleave={handleSegmentLeave}
         >

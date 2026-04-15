@@ -67,6 +67,7 @@
       memo.status === 'diarizing' ||
       memo.status === 'finalizing'
   );
+  const progressPct = $derived(Math.round(memo.progress * 100));
 </script>
 
 <!-- GRID VIEW -->
@@ -104,22 +105,37 @@
         </div>
       {/if}
 
-      <!-- Status badge -->
-      <span
-        class="absolute right-3 top-3 rounded-none border border-text-primary/20 bg-surface-900/80 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
-          memo.status
-        )}"
-      >
-        {getStatusLabel(memo.status)}
-      </span>
+      <!-- Status badge (hidden for active jobs — shown via progress bar instead) -->
+      {#if !isActive}
+        <span
+          class="absolute right-3 top-3 rounded-none border border-text-primary/20 bg-surface-900/80 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
+            memo.status
+          )}"
+        >
+          {getStatusLabel(memo.status)}
+        </span>
+      {/if}
 
       <!-- Active indicator -->
       {#if isActive}
-        <div class="absolute left-3 top-3">
+        <div class="absolute left-3 top-3 flex items-center gap-2">
           <div class="h-2 w-2 animate-pulse rounded-none bg-accent"></div>
+          <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium">
+            {getStatusLabel(memo.status)}
+          </span>
         </div>
       {/if}
     </div>
+
+    <!-- Progress bar for active jobs -->
+    {#if isActive}
+      <div class="h-1 w-full overflow-hidden bg-text-primary/10">
+        <div
+          class="h-full bg-accent transition-all duration-500 ease-luxury"
+          style="width: {progressPct}%"
+        ></div>
+      </div>
+    {/if}
 
     <!-- Content -->
     <div class="flex flex-1 flex-col gap-3 p-5">
@@ -234,14 +250,29 @@
       {formatRelativeTime(memo.updated_at)}
     </span>
 
-    <!-- Status badge -->
-    <span
-      class="shrink-0 rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
-        memo.status
-      )}"
-    >
-      {getStatusLabel(memo.status)}
-    </span>
+    <!-- Progress bar (list view) for active jobs -->
+    {#if isActive}
+      <div class="flex shrink-0 items-center gap-2">
+        <div class="h-1 w-16 overflow-hidden bg-text-primary/10 rounded-none">
+          <div
+            class="h-full bg-accent transition-all duration-500 ease-luxury"
+            style="width: {progressPct}%"
+          ></div>
+        </div>
+        <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium tabular-nums">
+          {progressPct}%
+        </span>
+      </div>
+    {:else}
+      <!-- Status badge for completed/failed memos -->
+      <span
+        class="shrink-0 rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
+          memo.status
+        )}"
+      >
+        {getStatusLabel(memo.status)}
+      </span>
+    {/if}
 
     <!-- Actions -->
     {#if isFailed}

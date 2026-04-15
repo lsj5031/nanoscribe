@@ -32,7 +32,7 @@ ACTIVE_STATES = frozenset({"queued", "preprocessing", "transcribing", "diarizing
 # Valid transitions: from_state → set of allowed to_states
 VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "queued": frozenset({"preprocessing", "failed", "cancelled"}),
-    "preprocessing": frozenset({"transcribing", "failed", "cancelled"}),
+    "preprocessing": frozenset({"transcribing", "diarizing", "failed", "cancelled"}),
     "transcribing": frozenset({"diarizing", "finalizing", "failed", "cancelled"}),
     "diarizing": frozenset({"finalizing", "failed", "cancelled"}),
     "finalizing": frozenset({"completed", "failed", "cancelled"}),

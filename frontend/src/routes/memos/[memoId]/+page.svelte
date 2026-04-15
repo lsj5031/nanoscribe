@@ -29,8 +29,12 @@
     flushSave,
     getFullTranscriptText,
     connectEditorSSE,
-    hasSegments
+    hasSegments,
+    getJobProgress,
+    getJobStage,
+    getJobDetail
   } from '$lib/stores/editor.svelte';
+  import { getStatusLabel } from '$lib/stores/library.svelte';
 
   let waveformPane: WaveformPane | undefined = $state();
   let transcriptPane: TranscriptPane | undefined = $state();
@@ -49,6 +53,9 @@
   const durationMs = $derived(getDurationMs());
   const capabilities = $derived(getCapabilities());
   const hasContent = $derived(hasSegments());
+  const jobProgress = $derived(getJobProgress());
+  const jobStage = $derived(getJobStage());
+  const jobDetail = $derived(getJobDetail());
 
   $effect(() => {
     if (memoId) {
@@ -229,7 +236,7 @@
       }
       const job = await res.json();
       connectEditorSSE(job.id);
-      showSuccess('Re-running transcription…');
+      showSuccess('Re-processing with transcription & speaker detection…');
     } catch {
       showError('Failed to start re-run');
     }
@@ -244,14 +251,14 @@
         return;
       }
       if (!res.ok) {
-        showError(`Diarization failed (${res.status})`);
+        showError(`Speaker detection failed (${res.status})`);
         return;
       }
       const job = await res.json();
       connectEditorSSE(job.id);
-      showSuccess('Re-running diarization…');
+      showSuccess('Re-running speaker detection…');
     } catch {
-      showError('Failed to start diarization');
+      showError('Failed to start speaker detection');
     }
   }
 
@@ -320,6 +327,21 @@
         {memo?.title ?? 'Untitled'}
       </h1>
 
+      <!-- Active job progress indicator -->
+      {#if jobProgress !== null}
+        <div class="flex items-center gap-3">
+          <div class="h-1.5 w-24 overflow-hidden bg-[#1A1A1A]/10 rounded-none">
+            <div
+              class="h-full bg-[#D4AF37] transition-all duration-500 ease-luxury"
+              style="width: {Math.round(jobProgress * 100)}%"
+            ></div>
+          </div>
+          <span class="text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 whitespace-nowrap">
+            {jobStage ? getStatusLabel(jobStage) : 'Processing'}{jobDetail ? ` · ${jobDetail}` : ''}
+          </span>
+        </div>
+      {/if}
+
       <!-- Export -->
       <div class="relative">
         <button
@@ -356,25 +378,25 @@
         {/if}
       </div>
 
-      <!-- Re-run diarization (only when supported) -->
+      <!-- Re-process (transcription + speaker detection) -->
+      <button
+        onclick={handleRerun}
+        class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
+        title="Re-run transcription & speaker detection"
+      >
+        Re-process
+      </button>
+
+      <!-- Re-run speaker detection only (when supported and already has transcript) -->
       {#if capabilities.speaker_diarization && hasContent}
         <button
           onclick={handleRerunDiarization}
           class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
-          title="Re-run diarization"
+          title="Re-run speaker detection only"
         >
-          Diarize
+          Detect speakers
         </button>
       {/if}
-
-      <!-- Re-run transcription -->
-      <button
-        onclick={handleRerun}
-        class="px-6 py-2 text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
-        title="Re-run transcription"
-      >
-        Transcribe
-      </button>
     </div>
 
     <!-- Two-pane layout -->

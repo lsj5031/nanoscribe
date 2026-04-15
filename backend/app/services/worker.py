@@ -7,6 +7,9 @@ VAL-JOB-018: Progress updates throttled.
 The worker runs as an asyncio background task. It polls the database for
 queued jobs and processes them sequentially through the full pipeline:
   queued → preprocessing → transcribing → diarizing → finalizing → completed
+
+For ``job_type='diarize'`` jobs, the pipeline skips transcription and only
+runs diarization on the already-transcribed memo.
 """
 
 from __future__ import annotations
@@ -34,8 +37,16 @@ logger = structlog.get_logger(__name__)
 # Polling interval for checking queued jobs
 POLL_INTERVAL_SECONDS = 2.0
 
-# Cancellation check interval within a job
-CANCEL_CHECK_INTERVAL = 0.5
+# Progress ranges for each stage (start, end)
+# Transcription (0.10 → 0.65): granular per-chunk progress reported via callback
+# Diarization (0.65 → 0.85): coarse progress
+# Finalizing (0.85 → 0.95): quick
+_PROGRESS_TRANSCRIBE_START = 0.10
+_PROGRESS_TRANSCRIBE_END = 0.65
+_PROGRESS_DIARIZE_START = 0.65
+_PROGRESS_DIARIZE_END = 0.85
+_PROGRESS_FINALIZE = 0.85
+_PROGRESS_FINALIZE_END = 0.95
 
 
 class WorkerLoop:
@@ -101,7 +112,11 @@ class WorkerLoop:
         logger.info("job_picked", attempt_count=next_job.get("attempt_count"))
 
         try:
-            await self._run_pipeline(job_id, memo_id, next_job)
+            job_type = next_job.get("job_type", "transcribe")
+            if job_type == "diarize":
+                await self._run_diarize_pipeline(job_id, memo_id, next_job)
+            else:
+                await self._run_pipeline(job_id, memo_id, next_job)
         except Exception as exc:
             logger.error("pipeline_failed", error=str(exc), exc_info=True)
             job_service.fail_job(self.db_path, job_id, "UNKNOWN", str(exc))
@@ -112,7 +127,7 @@ class WorkerLoop:
             clear_contextvars()
 
     async def _run_pipeline(self, job_id: str, memo_id: str, job: dict) -> None:
-        """Execute the full processing pipeline for a job."""
+        """Execute the full processing pipeline for a transcription job."""
         sse = get_sse_manager()
         data_dir = get_settings().data_dir
         memo_dir = data_dir / "memos" / memo_id
@@ -167,7 +182,7 @@ class WorkerLoop:
             self._do_cancel(job_id)
             return
 
-        # ── Stage 2: Transcribing ───────────────────────────────────
+        # ── Stage 2: Transcribing (with per-chunk progress) ──────────
         t_transcribe_start = time.monotonic()
         job_service.transition_job(self.db_path, job_id, "transcribing")
         sse.publish_stage(job_id, "transcribing")
@@ -175,11 +190,36 @@ class WorkerLoop:
 
         hotwords = job.get("hotwords")
 
+        # Build a chunk callback that maps chunk progress to overall range
+        # [0.10 .. 0.65] and publishes SSE from the thread.
+        db_path = self.db_path
+
+        def _chunk_callback(chunks_done: int, total_chunks: int) -> None:
+            """Called from the transcription thread after each ASR chunk."""
+            if total_chunks <= 0:
+                return
+            frac = chunks_done / total_chunks
+            progress = _PROGRESS_TRANSCRIBE_START + frac * (_PROGRESS_TRANSCRIBE_END - _PROGRESS_TRANSCRIBE_START)
+            # DB update is thread-safe (uses its own connection)
+            job_service.update_progress(db_path, job_id, progress)
+            # SSE must be dispatched to the main event loop
+            sse.publish_progress_threadsafe(
+                job_id,
+                progress,
+                stage="transcribing",
+                detail={"chunks_done": chunks_done, "total_chunks": total_chunks},
+            )
+
         try:
             from app.services.transcription import get_models
 
             models = get_models()
-            result = await asyncio.to_thread(models.transcribe, normalized_path, hotwords=hotwords)
+            result = await asyncio.to_thread(
+                models.transcribe,
+                normalized_path,
+                hotwords=hotwords,
+                chunk_callback=_chunk_callback,
+            )
             t_transcribe_elapsed = time.monotonic() - t_transcribe_start
             segment_count = len(result.get("segments", []))
             logger.info(
@@ -198,21 +238,21 @@ class WorkerLoop:
             sse.publish_failed(job_id, "ASR_FAILED", str(exc))
             return
 
-        # Report progress during transcription (simulated since FunASR is batch)
-        job_service.update_progress(self.db_path, job_id, 0.7)
-        sse.publish_progress(job_id, 0.7, "transcribing")
+        # Report progress at end of transcription stage
+        job_service.update_progress(self.db_path, job_id, _PROGRESS_TRANSCRIBE_END)
+        sse.publish_progress(job_id, _PROGRESS_TRANSCRIBE_END, "transcribing")
 
         if self.is_cancelled(job_id):
             self._do_cancel(job_id)
             return
 
-        # ── Stage 2b: Diarization (optional) ────────────────────────
+        # ── Stage 2b: Diarization ─────────────────────────────────────
         enable_diarization = bool(job.get("enable_diarization"))
         if enable_diarization:
             t_diarize_start = time.monotonic()
             job_service.transition_job(self.db_path, job_id, "diarizing")
             sse.publish_stage(job_id, "diarizing")
-            job_service.update_progress(self.db_path, job_id, 0.75)
+            job_service.update_progress(self.db_path, job_id, _PROGRESS_DIARIZE_START)
             logger.info("stage_started", stage="diarizing")
 
             try:
@@ -229,10 +269,14 @@ class WorkerLoop:
                         elapsed_s=round(time.monotonic() - t_diarize_start, 2),
                     )
 
-                job_service.update_progress(self.db_path, job_id, 0.85)
-                sse.publish_progress(job_id, 0.85, "diarizing")
+                job_service.update_progress(self.db_path, job_id, _PROGRESS_DIARIZE_END)
+                sse.publish_progress(job_id, _PROGRESS_DIARIZE_END, "diarizing")
             except Exception as exc:
                 logger.warning("diarization_failed", error=str(exc))
+        else:
+            # No diarization — skip straight to finalizing range
+            job_service.update_progress(self.db_path, job_id, _PROGRESS_DIARIZE_END)
+            sse.publish_progress(job_id, _PROGRESS_DIARIZE_END)
 
         if self.is_cancelled(job_id):
             self._do_cancel(job_id)
@@ -241,7 +285,7 @@ class WorkerLoop:
         # ── Stage 3: Finalizing ─────────────────────────────────────
         job_service.transition_job(self.db_path, job_id, "finalizing")
         sse.publish_stage(job_id, "finalizing")
-        job_service.update_progress(self.db_path, job_id, 0.9)
+        job_service.update_progress(self.db_path, job_id, _PROGRESS_FINALIZE)
         logger.info("stage_started", stage="finalizing")
 
         # Persist transcript
@@ -269,7 +313,7 @@ class WorkerLoop:
             except Exception as exc:
                 logger.warning("speaker_rows_failed", error=str(exc))
 
-        job_service.update_progress(self.db_path, job_id, 0.95)
+        job_service.update_progress(self.db_path, job_id, _PROGRESS_FINALIZE_END)
 
         if self.is_cancelled(job_id):
             self._do_cancel(job_id)
@@ -279,6 +323,166 @@ class WorkerLoop:
         job_service.transition_job(self.db_path, job_id, "completed")
         sse.publish_completed(job_id)
         logger.info("job_completed")
+
+    async def _run_diarize_pipeline(self, job_id: str, memo_id: str, job: dict) -> None:
+        """Execute a diarization-only pipeline for job_type='diarize'.
+
+        Skips transcription. Loads the existing transcript, runs diarization,
+        merges speaker labels, and persists the result.
+        """
+        import json
+
+        sse = get_sse_manager()
+        data_dir = get_settings().data_dir
+        memo_dir = data_dir / "memos" / memo_id
+
+        # ── Stage 1: Preprocessing (ensure normalized audio exists) ───
+        job_service.transition_job(self.db_path, job_id, "preprocessing")
+        sse.publish_stage(job_id, "preprocessing")
+        job_service.update_progress(self.db_path, job_id, 0.05)
+        logger.info("stage_started", stage="preprocessing", job_type="diarize")
+
+        normalized_path = memo_dir / "normalized.wav"
+        if not normalized_path.exists():
+            # Try to normalize from source
+            source_path = memo_dir / "source.original"
+            if not source_path.exists():
+                job_service.fail_job(self.db_path, job_id, "NORMALIZATION_FAILED", "Source file not found")
+                sse.publish_failed(job_id, "NORMALIZATION_FAILED", "Source file not found")
+                return
+
+            try:
+                normalized_path = normalize_audio(source_path, memo_dir)
+            except NormalizationError as exc:
+                job_service.fail_job(self.db_path, job_id, "NORMALIZATION_FAILED", str(exc))
+                sse.publish_failed(job_id, "NORMALIZATION_FAILED", str(exc))
+                return
+
+        # Load existing transcript
+        final_path = memo_dir / "transcript.final.json"
+        if not final_path.exists():
+            job_service.fail_job(self.db_path, job_id, "DIARIZE_FAILED", "No existing transcript to diarize")
+            sse.publish_failed(job_id, "DIARIZE_FAILED", "No existing transcript to diarize")
+            return
+
+        try:
+            existing_segments = json.loads(final_path.read_text())
+        except Exception as exc:
+            job_service.fail_job(self.db_path, job_id, "DIARIZE_FAILED", f"Failed to load transcript: {exc}")
+            sse.publish_failed(job_id, "DIARIZE_FAILED", f"Failed to load transcript: {exc}")
+            return
+
+        job_service.update_progress(self.db_path, job_id, 0.1)
+
+        if self.is_cancelled(job_id):
+            self._do_cancel(job_id)
+            return
+
+        # ── Stage 2: Diarizing ───────────────────────────────────────
+        t_diarize_start = time.monotonic()
+        job_service.transition_job(self.db_path, job_id, "diarizing")
+        sse.publish_stage(job_id, "diarizing")
+        job_service.update_progress(self.db_path, job_id, 0.2)
+        logger.info("stage_started", stage="diarizing", job_type="diarize")
+
+        try:
+            from app.services.diarization import run_diarization
+            from app.services.diarization_merge import merge_diarization
+
+            diarization_segments = await asyncio.to_thread(run_diarization, normalized_path)
+
+            if diarization_segments:
+                # Convert final.json format to the merge_diarization input format
+                asr_segments = [
+                    {
+                        "start_ms": seg["start_ms"],
+                        "end_ms": seg["end_ms"],
+                        "text": seg["text"],
+                        "confidence": seg.get("confidence", 1.0),
+                    }
+                    for seg in existing_segments
+                ]
+                merged = merge_diarization(asr_segments, diarization_segments)
+                # Copy speaker_key back into existing segments
+                for i, seg in enumerate(existing_segments):
+                    if i < len(merged):
+                        seg["speaker_key"] = merged[i].get("speaker_key")
+                logger.info(
+                    "diarization_completed",
+                    speaker_segments=len(diarization_segments),
+                    elapsed_s=round(time.monotonic() - t_diarize_start, 2),
+                )
+            else:
+                logger.warning("diarization_no_segments", job_type="diarize")
+
+        except Exception as exc:
+            logger.warning("diarization_failed", error=str(exc))
+            # Don't fail the job — just leave segments without speaker labels
+
+        # Advance progress regardless of diarization success/failure
+        job_service.update_progress(self.db_path, job_id, 0.7)
+        sse.publish_progress(job_id, 0.7, "diarizing")
+
+        if self.is_cancelled(job_id):
+            self._do_cancel(job_id)
+            return
+
+        # ── Stage 3: Finalizing ─────────────────────────────────────
+        job_service.transition_job(self.db_path, job_id, "finalizing")
+        sse.publish_stage(job_id, "finalizing")
+        job_service.update_progress(self.db_path, job_id, 0.85)
+        logger.info("stage_started", stage="finalizing", job_type="diarize")
+
+        # Re-persist transcript with updated speaker labels
+        try:
+            # Load raw output for persistence (it won't have speaker info, that's ok)
+            raw_path = memo_dir / "transcript.raw.json"
+            raw_output = json.loads(raw_path.read_text()) if raw_path.exists() else []
+
+            # Build segments in persist_transcript format
+            segments = [
+                {
+                    "start_ms": seg["start_ms"],
+                    "end_ms": seg["end_ms"],
+                    "text": seg["text"],
+                    "confidence": seg.get("confidence", 1.0),
+                    "speaker_key": seg.get("speaker_key"),
+                }
+                for seg in existing_segments
+            ]
+
+            await asyncio.to_thread(
+                persist_transcript,
+                memo_id,
+                raw_output,
+                segments,
+                self.db_path,
+            )
+            logger.info("transcript_persisted")
+        except Exception as exc:
+            logger.error("transcript_persist_failed", error=str(exc))
+            job_service.fail_job(self.db_path, job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
+            sse.publish_failed(job_id, "UNKNOWN", f"Failed to persist transcript: {exc}")
+            return
+
+        # Create speaker rows
+        try:
+            from app.services.diarization import create_speaker_rows
+
+            await asyncio.to_thread(create_speaker_rows, self.db_path, memo_id, segments)
+        except Exception as exc:
+            logger.warning("speaker_rows_failed", error=str(exc))
+
+        job_service.update_progress(self.db_path, job_id, 0.95)
+
+        if self.is_cancelled(job_id):
+            self._do_cancel(job_id)
+            return
+
+        # ── Stage 4: Completed ──────────────────────────────────────
+        job_service.transition_job(self.db_path, job_id, "completed")
+        sse.publish_completed(job_id)
+        logger.info("job_completed", job_type="diarize")
 
     def _do_cancel(self, job_id: str) -> None:
         """Execute cancellation for a job."""

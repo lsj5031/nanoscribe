@@ -115,6 +115,12 @@ interface EditorState {
   hoveredSegmentIndex: number;
   transcriptSearchOpen: boolean;
   zoomLevel: number;
+  /** Active job progress (0–1), null when no job is running. */
+  jobProgress: number | null;
+  /** Active job stage label, e.g. "transcribing" */
+  jobStage: string | null;
+  /** Active job sub-detail, e.g. "Chunk 3/12" */
+  jobDetail: string | null;
 }
 
 let state = $state<EditorState>({
@@ -137,7 +143,10 @@ let state = $state<EditorState>({
   saveError: null,
   hoveredSegmentIndex: -1,
   transcriptSearchOpen: false,
-  zoomLevel: loadZoomLevel()
+  zoomLevel: loadZoomLevel(),
+  jobProgress: null,
+  jobStage: null,
+  jobDetail: null
 });
 
 function loadZoomLevel(): number {
@@ -213,6 +222,15 @@ export function getTranscriptSearchOpen(): boolean {
 }
 export function getZoomLevel(): number {
   return state.zoomLevel;
+}
+export function getJobProgress(): number | null {
+  return state.jobProgress;
+}
+export function getJobStage(): string | null {
+  return state.jobStage;
+}
+export function getJobDetail(): string | null {
+  return state.jobDetail;
 }
 
 // Derived
@@ -485,24 +503,33 @@ export function connectEditorSSE(jobId: string): void {
 
   _editorEventSource.addEventListener('job.completed', () => {
     disconnectEditorSSE();
+    state.jobProgress = null;
+    state.jobStage = null;
+    state.jobDetail = null;
     // Reload data after completion
     if (state.memoId) initEditor(state.memoId);
-    showSuccess('Transcription completed');
+    showSuccess('Processing completed');
   });
 
   _editorEventSource.addEventListener('job.failed', (e: MessageEvent) => {
     disconnectEditorSSE();
+    state.jobProgress = null;
+    state.jobStage = null;
+    state.jobDetail = null;
     try {
       const data = JSON.parse(e.data);
-      showError(`Transcription failed: ${data.error_message ?? 'Unknown error'}`);
+      showError(`Processing failed: ${data.error_message ?? 'Unknown error'}`);
     } catch {
-      showError('Transcription failed');
+      showError('Processing failed');
     }
   });
 
   _editorEventSource.addEventListener('job.cancelled', () => {
     disconnectEditorSSE();
-    showWarning('Transcription was cancelled');
+    state.jobProgress = null;
+    state.jobStage = null;
+    state.jobDetail = null;
+    showWarning('Processing was cancelled');
   });
 
   _editorEventSource.addEventListener('job.stage', (e: MessageEvent) => {
@@ -510,6 +537,29 @@ export function connectEditorSSE(jobId: string): void {
       const data = JSON.parse(e.data);
       if (state.memo) {
         state.memo.status = data.status ?? state.memo.status;
+      }
+      state.jobStage = data.stage ?? data.status ?? null;
+      state.jobDetail = null;
+      state.jobProgress = data.progress ?? state.jobProgress;
+    } catch {
+      // ignore parse errors
+    }
+  });
+
+  _editorEventSource.addEventListener('job.progress', (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data);
+      state.jobProgress = data.progress ?? state.jobProgress;
+      if (data.stage) {
+        state.jobStage = data.stage;
+      }
+      if (data.detail) {
+        const d = data.detail;
+        if (d.chunks_done != null && d.total_chunks != null) {
+          state.jobDetail = `Chunk ${d.chunks_done}/${d.total_chunks}`;
+        }
+      } else {
+        state.jobDetail = null;
       }
     } catch {
       // ignore parse errors
@@ -519,6 +569,7 @@ export function connectEditorSSE(jobId: string): void {
   _editorEventSource.onerror = () => {
     // Don't show error toast on SSE disconnect — the job may still be running
     disconnectEditorSSE();
+    // Don't clear job state — the job may still be processing server-side
   };
 }
 

@@ -28,7 +28,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import structlog
 
@@ -293,6 +293,7 @@ class TranscriptionModels:
         audio_path: str | Path,
         vad_segments: list[list[int]],
         hotwords: str | None = None,
+        chunk_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Run ASR on VAD-chunked audio to avoid GPU OOM on long files.
 
@@ -405,6 +406,13 @@ class TranscriptionModels:
                         text_preview=chunk_text[:60] if chunk_text else "",
                         elapsed_s=round(time.monotonic() - t_chunk_start, 2),
                     )
+
+                    # Notify caller of per-chunk progress
+                    if chunk_callback is not None:
+                        try:
+                            chunk_callback(i + 1, len(merged))
+                        except Exception:
+                            pass  # Don't let callback errors break transcription
             finally:
                 del model
                 self._clear_vram()
@@ -454,6 +462,7 @@ class TranscriptionModels:
         self,
         audio_path: str | Path,
         hotwords: str | None = None,
+        chunk_callback: Callable[[int, int], None] | None = None,
     ) -> dict[str, Any]:
         """Full transcription pipeline: VAD → chunked ASR → Punc.
 
@@ -461,6 +470,13 @@ class TranscriptionModels:
           - raw_output: The raw FunASR ASR result list
           - text: Combined transcript text (with punctuation)
           - segments: List of segment dicts with start_ms, end_ms, text, confidence
+
+        Args:
+            audio_path: Path to the normalized WAV file.
+            hotwords: Optional hotword string for ASR.
+            chunk_callback: Optional callback invoked after each ASR chunk
+                with ``(chunks_done, total_chunks)``. Used by the worker to
+                publish fine-grained progress.
         """
         self.load()
 
@@ -475,7 +491,7 @@ class TranscriptionModels:
             return {"raw_output": [], "text": "", "segments": []}
 
         # Step 2: Run ASR on VAD-chunked audio (avoids GPU OOM on long files)
-        chunk_results = self.run_asr_chunked(audio_path, vad_segments, hotwords=hotwords)
+        chunk_results = self.run_asr_chunked(audio_path, vad_segments, hotwords=hotwords, chunk_callback=chunk_callback)
 
         if not chunk_results:
             logger.info("transcribe_done", result="no_asr_output", elapsed_s=round(time.monotonic() - t0, 2))

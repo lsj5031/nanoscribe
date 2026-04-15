@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getActiveUpload, cancelUpload, dismissUpload } from '$lib/stores/upload.svelte';
+  import { getStatusLabel } from '$lib/stores/library.svelte';
 
   let cancelling = $state(false);
 
@@ -24,29 +25,6 @@
 
   function handleDismiss() {
     dismissUpload();
-  }
-
-  function getStageLabel(stage: string): string {
-    switch (stage) {
-      case 'queued':
-        return 'Queued';
-      case 'preprocessing':
-        return 'Preprocessing';
-      case 'transcribing':
-        return 'Transcribing';
-      case 'diarizing':
-        return 'Identifying speakers';
-      case 'finalizing':
-        return 'Finalizing';
-      case 'completed':
-        return 'Complete';
-      case 'failed':
-        return 'Failed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return stage.charAt(0).toUpperCase() + stage.slice(1);
-    }
   }
 
   function getProgressPercent(progress: number): string {
@@ -108,9 +86,16 @@
         <h2 class="font-serif text-3xl leading-tight text-text-primary truncate max-w-[280px]">
           {active.title}
         </h2>
-        <p class="text-xs uppercase tracking-[0.2em] text-text-secondary">
-          {getStageLabel(active.stage)}
-        </p>
+        <div class="flex flex-col items-center gap-1">
+          <p class="text-xs uppercase tracking-[0.2em] text-text-secondary">
+            {getStatusLabel(active.stage)}
+          </p>
+          {#if active.detail}
+            <p class="text-xs tracking-[0.1em] text-accent">
+              {active.detail}
+            </p>
+          {/if}
+        </div>
       </div>
 
       <!-- Actions -->
