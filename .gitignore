@@ -31,6 +31,12 @@ frontend/.vite/
 # ── Model caches (mounted, not repo content) ──
 .modelscope_cache/
 
+# ── Test / CI artifacts ────────────────────────
+test-results/
+
+# ── Screenshots & misc ─────────────────────────
+screenshot.png
+
 # ── OS/editor junk ─────────────────────────────
 .DS_Store
 Thumbs.db
