@@ -1,6 +1,10 @@
 # NanoScribe
 
-A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voice memo transcription. Upload or record audio, watch progress in real time, edit transcripts, and export results — all processed locally on your GPU.
+A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voice memo transcription. Upload or record audio, watch progress in real time, edit transcripts, and export results — process locally on your GPU or via a remote OpenAI-compatible API.
+
+<p align="center">
+  <img src="screenshots/memo-editor.png" alt="NanoScribe Transcript Editor" width="720">
+</p>
 
 ## Features
 
@@ -10,13 +14,37 @@ A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voic
 - **Speaker Diarization** — Automatic speaker identification with color-coded badges and inline rename
 - **Full-text Search** — Search across memo titles and transcript content
 - **Export** — TXT, JSON, and SRT formats
+- **Remote API** — Use any OpenAI-compatible API (OpenAI, Groq, etc.) instead of local GPU
+- **OpenAI-Compatible Endpoint** — Drop-in `/v1/audio/transcriptions` for programmatic access
 - **Offline Mode** — Works without internet once models are cached
 - **PWA Installable** — Install as a desktop app with keyboard shortcuts
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><b>Library</b></td>
+    <td align="center"><b>Transcript Editor</b></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/library.png" alt="Library view" width="420"></td>
+    <td><img src="screenshots/memo-editor.png" alt="Transcript editor" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Settings — Local GPU</b></td>
+    <td align="center"><b>Settings — Remote API</b></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/settings-local-gpu.png" alt="Settings with local GPU" width="420"></td>
+    <td><img src="screenshots/settings.png" alt="Settings with remote API" width="420"></td>
+  </tr>
+</table>
 
 ## Requirements
 
 - Docker & Docker Compose
-- NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- **Local inference:** NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- **Remote inference:** Any OpenAI-compatible API endpoint (no GPU needed)
 - Base image: `glm-asr-glm-asr:latest` (pre-built CUDA/PyTorch image)
 
 ## Quick Start
@@ -38,6 +66,7 @@ make dev
 |---------|-------------|
 | `make build` | Build the dev Docker image |
 | `make build-prod` | Build the production image (with built SPA) |
+| `make frontend-build` | Build the frontend SPA inside the container |
 | `make dev` | Start dev environment with hot reload |
 | `make shell` | Open an interactive shell in the container |
 | `make check` | Run all quality checks (lint, format, typecheck) |
@@ -49,13 +78,20 @@ make dev
 
 ## Environment Variables
 
-### Runtime (docker-compose.yml)
+### Application Defaults
+
+Defaults come from `backend/app/core/config.py`. The `docker-compose.yml` may override some values (e.g. `NANOSCRIBE_OFFLINE=1`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NANOSCRIBE_DATA_DIR` | `/app/data` | Root directory for all persistent data |
-| `NANOSCRIBE_STATIC_DIR` | `/app/frontend/build` | Path to built frontend SPA |
+| `NANOSCRIBE_STATIC_DIR` | `/app/static` | Path to built frontend SPA |
 | `NANOSCRIBE_OFFLINE` | `0` | Set to `1` to skip remote model checks/downloads |
+| `NANOSCRIBE_API_KEY` | _(empty)_ | Bearer token for the OpenAI-compatible endpoint |
+| `NANOSCRIBE_REMOTE_ASR_URL` | _(empty)_ | Remote ASR endpoint URL (include `/v1` prefix) |
+| `NANOSCRIBE_REMOTE_ASR_API_KEY` | _(empty)_ | API key for the remote ASR provider |
+| `NANOSCRIBE_REMOTE_ASR_MODEL` | `whisper-1` | Model ID for the remote ASR provider |
+| `NANOSCRIBE_REMOTE_ASR_TIMEOUT` | `900` | Remote ASR request timeout in seconds |
 | `HF_HUB_OFFLINE` | `0` | Set to `1` to prevent HuggingFace downloads |
 | `MODELSCOPE_CACHE` | `/app/data/.modelscope_cache` | ModelScope model cache directory |
 | `PYTORCH_CUDA_ALLOC_CONF` | `expandable_segments:True` | CUDA memory allocator config |
@@ -141,18 +177,25 @@ Models are stored in `data/.modelscope_cache/` and loaded ephemerally onto the G
 | `/api/system/capabilities` | GET | Runtime capability manifest |
 | `/api/system/readiness` | GET | Per-model readiness status |
 | `/api/system/status` | GET | System status and storage info |
+| `/api/system/settings/engine` | GET | Current engine configuration |
+| `/api/system/settings/engine` | PUT | Update engine configuration |
 | `/api/memos` | GET/POST | List or upload memos |
 | `/api/memos/{id}` | GET/DELETE | Get or delete a memo |
 | `/api/memos/{id}/audio` | GET | Stream audio file |
+| `/api/memos/{id}/waveform` | GET | Waveform peak data |
 | `/api/memos/{id}/segments` | GET/PATCH | Get or edit transcript segments |
 | `/api/memos/{id}/speakers` | GET/PATCH | Get or rename speakers |
 | `/api/memos/{id}/reprocess` | POST | Re-run transcription |
 | `/api/memos/{id}/regenerate-diarization` | POST | Re-run diarization only |
+| `/api/memos/{id}/retry` | POST | Retry last failed job |
+| `/api/memos/{id}/jobs` | GET | List jobs for a memo |
 | `/api/memos/{id}/export` | GET | Export (txt/json/srt) |
 | `/api/jobs/{id}` | GET | Job status |
 | `/api/jobs/{id}/events` | GET | SSE event stream |
 | `/api/jobs/{id}/cancel` | POST | Cancel a running job |
 | `/api/search` | GET | Search memos and transcripts |
+| `/v1/audio/transcriptions` | POST | OpenAI-compatible transcription |
+| `/v1/models` | GET | OpenAI-compatible model list |
 
 ## Development
 
