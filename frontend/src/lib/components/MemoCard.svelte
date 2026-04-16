@@ -128,10 +128,23 @@
     <!-- Progress bar for active jobs -->
     {#if isActive}
       <div class="h-1 w-full overflow-hidden bg-text-primary/10">
-        <div
-          class="h-full bg-accent transition-all duration-500 ease-luxury"
-          style="width: {progressPct}%"
-        ></div>
+        {#if progressPct > 0 && progressPct < 20}
+          <!-- Indeterminate shimmer for early progress (remote transcription has no per-chunk updates) -->
+          <div class="relative h-full w-full">
+            <div
+              class="h-full bg-accent/60 transition-all duration-500 ease-luxury"
+              style="width: {progressPct}%"
+            ></div>
+            <div
+              class="absolute inset-0 h-full w-full animate-pulse bg-gradient-to-r from-accent/0 via-accent/40 to-accent/0"
+            ></div>
+          </div>
+        {:else}
+          <div
+            class="h-full bg-accent transition-all duration-500 ease-luxury"
+            style="width: {progressPct}%"
+          ></div>
+        {/if}
       </div>
     {/if}
 
@@ -249,10 +262,22 @@
     {#if isActive}
       <div class="flex shrink-0 items-center gap-2">
         <div class="h-1 w-16 overflow-hidden bg-text-primary/10 rounded-none">
-          <div
-            class="h-full bg-accent transition-all duration-500 ease-luxury"
-            style="width: {progressPct}%"
-          ></div>
+          {#if progressPct > 0 && progressPct < 20}
+            <div class="relative h-full w-full">
+              <div
+                class="h-full bg-accent/60 transition-all duration-500 ease-luxury"
+                style="width: {progressPct}%"
+              ></div>
+              <div
+                class="absolute inset-0 h-full w-full animate-pulse bg-gradient-to-r from-accent/0 via-accent/40 to-accent/0"
+              ></div>
+            </div>
+          {:else}
+            <div
+              class="h-full bg-accent transition-all duration-500 ease-luxury"
+              style="width: {progressPct}%"
+            ></div>
+          {/if}
         </div>
         <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium tabular-nums">
           {progressPct}%

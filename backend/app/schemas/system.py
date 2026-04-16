@@ -62,3 +62,23 @@ class StatusResponse(BaseModel):
     memo_count: int
     storage_used_mb: float
     models_cached: list[str]
+
+
+class EngineSettingsResponse(BaseModel):
+    """Response schema for GET /api/system/settings/engine."""
+
+    engine: str
+    remote_url: str
+    remote_api_key: str
+    remote_model: str
+    remote_timeout: int
+
+
+class EngineSettingsUpdate(BaseModel):
+    """Request schema for PUT /api/system/settings/engine."""
+
+    engine: str
+    remote_url: str = ""
+    remote_api_key: str | None = None
+    remote_model: str = "whisper-1"
+    remote_timeout: int | None = None

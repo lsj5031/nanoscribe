@@ -34,8 +34,22 @@ from app.services.transcription import TranscriptionError, persist_transcript
 
 logger = structlog.get_logger(__name__)
 
-# Polling interval for checking queued jobs
+# Polling interval for checking queued jobs (fallback)
 POLL_INTERVAL_SECONDS = 2.0
+
+# Event used to wake the worker immediately when a new job is queued
+_job_available: asyncio.Event | None = None
+
+
+def notify_job_queued() -> None:
+    """Signal the worker that a new job is available.
+
+    Call this after creating a job so the worker picks it up immediately
+    instead of waiting for the next poll cycle.
+    """
+    if _job_available is not None:
+        _job_available.set()
+
 
 # Progress ranges for each stage (start, end)
 # Transcription (0.10 → 0.65): granular per-chunk progress reported via callback
@@ -80,7 +94,9 @@ class WorkerLoop:
 
     async def run(self) -> None:
         """Main worker loop. Polls for queued jobs and processes them."""
+        global _job_available
         self._running = True
+        _job_available = asyncio.Event()
         logger.info("worker_loop_started")
 
         try:
@@ -90,9 +106,15 @@ class WorkerLoop:
                 except Exception as exc:
                     logger.error("worker_loop_error", error=str(exc), exc_info=True)
 
-                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                # Wait for the next poll cycle or an immediate wake-up signal
+                try:
+                    await asyncio.wait_for(_job_available.wait(), timeout=POLL_INTERVAL_SECONDS)
+                    _job_available.clear()
+                except asyncio.TimeoutError:
+                    pass  # Normal poll cycle
         finally:
             self._running = False
+            _job_available = None
             logger.info("worker_loop_stopped")
 
     async def _process_next_job(self) -> None:

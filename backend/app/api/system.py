@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
-from app.db import check_db_health
-from app.schemas.system import CapabilitiesResponse, HealthResponse, ReadinessResponse, StatusResponse
+from app.db import check_db_health, db_connection
+from app.schemas.system import (
+    CapabilitiesResponse,
+    EngineSettingsResponse,
+    EngineSettingsUpdate,
+    HealthResponse,
+    ReadinessResponse,
+    StatusResponse,
+)
 from app.services.capabilities import get_capabilities, get_readiness
 from app.services.status import get_system_status
+from app.services.transcription import get_active_engine_config, reset_models
 
 router = APIRouter(tags=["system"])
 
@@ -81,3 +89,79 @@ async def readiness() -> ReadinessResponse:
     """
     data = get_readiness()
     return ReadinessResponse(**data)
+
+
+@router.get("/settings/engine", response_model=EngineSettingsResponse)
+async def get_engine_settings() -> EngineSettingsResponse:
+    """Return the current transcription engine configuration.
+
+    Merges environment-variable defaults with database overrides.
+    The API key is masked in the response for security.
+    """
+    config = get_active_engine_config()
+    # Mask the API key for display
+    if config["remote_api_key"]:
+        config["remote_api_key"] = "********"
+    # Convert string values from DB to proper types
+    config["remote_timeout"] = int(config.get("remote_timeout", 900))
+    return EngineSettingsResponse(**config)
+
+
+@router.put("/settings/engine", response_model=EngineSettingsResponse)
+async def update_engine_settings(data: EngineSettingsUpdate) -> EngineSettingsResponse:
+    """Update the transcription engine configuration.
+
+    Persists overrides to the database and hot-reloads the engine
+    singleton so the next transcription job uses the new config.
+
+    Send ``remote_api_key: null`` or the masked string ``"********"``
+    to keep the existing key unchanged.
+    """
+    # Validate: remote engine requires a URL
+    if data.engine == "remote" and not data.remote_url:
+        raise HTTPException(
+            status_code=422,
+            detail="Remote engine requires an endpoint URL.",
+        )
+
+    curr = get_active_engine_config()
+
+    # Preserve existing API key if the client sent the masked placeholder
+    new_api_key = data.remote_api_key
+    if new_api_key is None or new_api_key == "********":
+        new_api_key = curr.get("remote_api_key", "")
+
+    # Preserve remote settings when switching to local so the user
+    # can switch back without re-entering them.
+    remote_url = data.remote_url if data.remote_url else curr.get("remote_url", "")
+    remote_model = data.remote_model if data.remote_model else curr.get("remote_model", "whisper-1")
+    remote_timeout = str(data.remote_timeout) if data.remote_timeout is not None else curr.get("remote_timeout", "900")
+
+    # Persist all keys to the database
+    updates = [
+        ("engine", data.engine),
+        ("remote_url", remote_url),
+        ("remote_api_key", new_api_key),
+        ("remote_model", remote_model),
+        ("remote_timeout", remote_timeout),
+    ]
+
+    db_path = _settings.db_path
+    with db_connection(db_path) as conn:
+        for k, v in updates:
+            conn.execute(
+                """INSERT INTO system_settings (key, value)
+                   VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                (k, v),
+            )
+        conn.commit()
+
+    # Hot-reload: reset the singleton so next get_models() re-evaluates
+    reset_models()
+
+    # Return the updated config (with masked key)
+    updated = get_active_engine_config()
+    if updated["remote_api_key"]:
+        updated["remote_api_key"] = "********"
+    updated["remote_timeout"] = int(updated.get("remote_timeout", 900))
+    return EngineSettingsResponse(**updated)

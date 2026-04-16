@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.schemas.upload import FileError, JobResponse, MemoResponse, UploadResponse
 from app.services.upload import SUPPORTED_EXTENSIONS, _is_supported_extension, create_memo_and_job
+from app.services.worker import notify_job_queued
 
 router = APIRouter(tags=["memos"])
 
@@ -83,5 +84,8 @@ async def upload_memos(
             status_code=422,
             detail=f"All files rejected. Supported formats: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
         )
+
+    # Wake the worker immediately so it picks up the new job(s)
+    notify_job_queued()
 
     return UploadResponse(memos=memos, jobs=jobs, errors=errors)

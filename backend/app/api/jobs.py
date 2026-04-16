@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.schemas.jobs import CancelResponse, JobDetailResponse, JobListResponse
 from app.services import jobs as job_service
 from app.services.sse import get_sse_manager
+from app.services.worker import notify_job_queued
 
 logger = structlog.get_logger(__name__)
 
@@ -219,6 +220,9 @@ async def retry_memo(memo_id: str) -> JobDetailResponse:
             detail="Cannot retry: memo does not have a failed or cancelled job",
         )
 
+    # Wake the worker immediately so it picks up the retried job
+    notify_job_queued()
+
     return _job_to_response(new_job)
 
 
@@ -275,5 +279,8 @@ async def reprocess_memo(memo_id: str, confirm: bool = False) -> JobDetailRespon
             status_code=409,
             detail="Cannot reprocess: memo has no existing jobs",
         )
+
+    # Wake the worker immediately so it picks up the reprocessed job
+    notify_job_queued()
 
     return _job_to_response(new_job)

@@ -26,6 +26,10 @@ const SUPPORTED_EXTENSIONS = new Set(['wav', 'mp3', 'm4a', 'aac', 'webm', 'ogg',
 
 let state = $state<UploadState>({ active: null, error: null });
 let eventSource: EventSource | null = null;
+let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let _reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY_MS = 1000;
 
 export function getUploadState(): UploadState {
   return state;
@@ -205,16 +209,123 @@ function connectSSE(jobId: string): void {
   eventSource.addEventListener('job.cancelled', handleTerminal);
 
   eventSource.onerror = () => {
-    // SSE error - don't immediately clear, the job may still be running
-    // Just disconnect and the user can cancel if needed
+    // SSE connection lost — try to reconnect after a delay
     disconnectSSE();
+    _tryReconnectSSE(jobId);
   };
+}
+
+/**
+ * Attempt to reconnect SSE after a connection drop.
+ * Polls the job status first; if still active, reconnects SSE.
+ * Uses exponential backoff up to MAX_RECONNECT_ATTEMPTS.
+ */
+function _tryReconnectSSE(jobId: string): void {
+  if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    // Give up reconnecting — poll one last time to get final status
+    _finalPollJobStatus(jobId);
+    return;
+  }
+
+  _reconnectAttempts++;
+  const delay = RECONNECT_BASE_DELAY_MS * Math.pow(1.5, _reconnectAttempts - 1);
+
+  _reconnectTimer = setTimeout(async () => {
+    _reconnectTimer = null;
+    // Check if the job is still active before reconnecting
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) return; // Job not found, stop reconnecting
+      const job = await res.json();
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        // Job finished while we were disconnected — update state directly
+        if (state.active && state.active.jobId === jobId) {
+          state.active = {
+            ...state.active,
+            status: job.status,
+            stage: job.status,
+            progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress)
+          };
+          // Auto-dismiss after a short delay
+          setTimeout(() => {
+            if (
+              state.active?.jobId === jobId &&
+              (state.active.status === 'completed' ||
+                state.active.status === 'failed' ||
+                state.active.status === 'cancelled')
+            ) {
+              state.active = null;
+            }
+          }, 1500);
+        }
+        return; // No need to reconnect
+      }
+
+      // Job is still active — reconnect SSE
+      _reconnectAttempts = 0; // Reset on successful poll
+      connectSSE(jobId);
+    } catch {
+      // Fetch failed — try again
+      _tryReconnectSSE(jobId);
+    }
+  }, delay);
 }
 
 function disconnectSSE(): void {
   if (eventSource) {
     eventSource.close();
     eventSource = null;
+  }
+  if (_reconnectTimer) {
+    clearTimeout(_reconnectTimer);
+    _reconnectTimer = null;
+  }
+  _reconnectAttempts = 0;
+}
+
+/**
+ * Final fallback: poll the job status one last time after SSE reconnect gives up.
+ * If the job is done, update the UI; otherwise clear the overlay so the user isn't stuck.
+ */
+async function _finalPollJobStatus(jobId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    if (!res.ok) {
+      // Job not found — clear overlay
+      state.active = null;
+      return;
+    }
+    const job = await res.json();
+
+    if (state.active && state.active.jobId === jobId) {
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        state.active = {
+          ...state.active,
+          status: job.status,
+          stage: job.status,
+          progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress)
+        };
+        // Auto-dismiss
+        setTimeout(() => {
+          if (
+            state.active?.jobId === jobId &&
+            (state.active.status === 'completed' ||
+              state.active.status === 'failed' ||
+              state.active.status === 'cancelled')
+          ) {
+            state.active = null;
+          }
+        }, 1500);
+      } else {
+        // Job still running but SSE is dead — show a warning
+        // and let the user cancel/dismiss
+        showWarning('Lost connection — you can cancel and retry from the library');
+      }
+    }
+  } catch {
+    // Can't reach server — clear overlay
+    state.active = null;
   }
 }
 

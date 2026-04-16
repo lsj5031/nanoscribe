@@ -322,6 +322,8 @@ function connectJobSSE(memoId: string, jobId: string): void {
 
   es.onerror = () => {
     disconnectSSE(memoId);
+    // Try to reconnect after a delay (same pattern as editor/upload stores)
+    _tryReconnectLibrarySSE(memoId, jobId);
   };
 }
 
@@ -348,12 +350,65 @@ function disconnectSSE(memoId: string): void {
     es.close();
     sseConnections.delete(memoId);
   }
+  // Clean up reconnect state
+  const timer = _libReconnectTimers.get(memoId);
+  if (timer) {
+    clearTimeout(timer);
+    _libReconnectTimers.delete(memoId);
+  }
+  _libReconnectAttempts.delete(memoId);
 }
 
 function disconnectAllSSE(): void {
   for (const [key] of sseConnections) {
     disconnectSSE(key);
   }
+}
+
+// Library SSE reconnection state
+let _libReconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let _libReconnectAttempts = new Map<string, number>();
+const LIB_MAX_RECONNECT = 3;
+const LIB_RECONNECT_BASE_MS = 2000;
+
+/**
+ * Attempt to reconnect SSE for a library memo after a connection drop.
+ * Polls the memo status first; if still active, reconnects SSE.
+ */
+function _tryReconnectLibrarySSE(memoId: string, jobId: string): void {
+  const attempts = _libReconnectAttempts.get(memoId) ?? 0;
+  if (attempts >= LIB_MAX_RECONNECT) return;
+
+  _libReconnectAttempts.set(memoId, attempts + 1);
+  const delay = LIB_RECONNECT_BASE_MS * Math.pow(1.5, attempts);
+
+  const timer = setTimeout(async () => {
+    _libReconnectTimers.delete(memoId);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) return;
+      const job = await res.json();
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        // Job finished while disconnected — update the memo
+        const memo = state.memos.find((m) => m.id === memoId);
+        if (memo) {
+          memo.status = job.status;
+          memo.progress = job.status === 'completed' ? 1.0 : memo.progress;
+          memo.stage = null;
+        }
+        return;
+      }
+
+      // Job still active — reconnect SSE
+      _libReconnectAttempts.delete(memoId);
+      connectJobSSE(memoId, jobId);
+    } catch {
+      _tryReconnectLibrarySSE(memoId, jobId);
+    }
+  }, delay);
+
+  _libReconnectTimers.set(memoId, timer);
 }
 
 /**
@@ -450,7 +505,7 @@ export function getStatusColor(status: string): string {
 export function getStatusLabel(status: string): string {
   switch (status) {
     case 'queued':
-      return 'Queued';
+      return 'Preparing…';
     case 'preprocessing':
       return 'Preparing audio';
     case 'transcribing':

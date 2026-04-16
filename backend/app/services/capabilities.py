@@ -10,6 +10,8 @@ from pathlib import Path
 
 import structlog
 
+from app.services.transcription import get_active_engine_config
+
 logger = structlog.get_logger(__name__)
 
 
@@ -38,10 +40,17 @@ def _detect_gpu() -> tuple[bool, str]:
 def _detect_model_ready() -> bool:
     """Check whether the core pipeline models are cached on disk.
 
-    Models are loaded ephemerally onto the GPU during inference (not kept
-    in memory), so "ready" means the disk cache exists, not that models
-    are resident in RAM/VRAM.
+    When remote ASR is configured (via env var or DB override), readiness
+    is always True — no local models are needed.
+
+    Otherwise, models are loaded ephemerally onto the GPU during inference
+    (not kept in memory), so "ready" means the disk cache exists, not that
+    models are resident in RAM/VRAM.
     """
+    config = get_active_engine_config()
+    if config["engine"] == "remote" and config["remote_url"]:
+        return True
+
     # Check that all core models (ASR, VAD, Punc) are cached on disk
     _OPTIONAL = {"diarization"}
     for key, (org, model_name) in _MODEL_CACHE_INFO.items():
@@ -56,15 +65,23 @@ def get_capabilities() -> dict:
     """Build the full capability manifest reflecting runtime state.
 
     Returns a dict matching CapabilitiesResponse schema.
+    When remote ASR is configured, reports device=remote and the remote
+    model name instead of the local FunASR model.
     """
+    config = get_active_engine_config()
+    is_remote = config["engine"] == "remote" and bool(config["remote_url"])
+
     gpu, device = _detect_gpu()
+
+    if is_remote:
+        device = "remote"
 
     return {
         "ready": _detect_model_ready(),
         "gpu": gpu,
         "device": device,
-        "asr_model": "FunAudioLLM/Fun-ASR-Nano-2512",
-        "vad": "fsmn-vad",
+        "asr_model": config["remote_model"] if is_remote else "FunAudioLLM/Fun-ASR-Nano-2512",
+        "vad": "remote" if is_remote else "fsmn-vad",
         "timestamps": True,
         "speaker_diarization": True,
         "hotwords": True,
@@ -112,7 +129,21 @@ def get_readiness() -> dict:
       - loaded=True  if the model is loaded in memory (via TranscriptionModels)
       - downloading=True if we detect a partial download (has directory but no files)
       - Both false if the model directory doesn't exist at all
+
+    When remote ASR is configured (via env var or DB override),
+    shortcuts the readiness check — the remote endpoint is always ready.
     """
+    config = get_active_engine_config()
+    if config["engine"] == "remote" and config["remote_url"]:
+        return {
+            "ready": True,
+            "models": {
+                "asr": {"name": config["remote_model"], "loaded": True, "downloading": False},
+            },
+            "device": "remote",
+            "gpu_available": False,
+        }
+
     gpu, device = _detect_gpu()
 
     models_info: dict[str, dict] = {}

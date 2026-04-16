@@ -311,6 +311,10 @@ let _pendingPositionSave: number | null = null;
 
 // SSE connection for active job in editor
 let _editorEventSource: EventSource | null = null;
+let _editorReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let _editorReconnectAttempts = 0;
+const EDITOR_MAX_RECONNECT = 5;
+const EDITOR_RECONNECT_BASE_MS = 1000;
 
 /**
  * Update segment text locally and debounce autosave.
@@ -567,10 +571,58 @@ export function connectEditorSSE(jobId: string): void {
   });
 
   _editorEventSource.onerror = () => {
-    // Don't show error toast on SSE disconnect — the job may still be running
+    // SSE connection lost — try to reconnect after a delay
     disconnectEditorSSE();
-    // Don't clear job state — the job may still be processing server-side
+    _tryReconnectEditorSSE(jobId);
   };
+}
+
+/**
+ * Attempt to reconnect SSE in the editor after a connection drop.
+ * Polls the job status first; if still active, reconnects SSE.
+ * Uses exponential backoff up to EDITOR_MAX_RECONNECT attempts.
+ */
+function _tryReconnectEditorSSE(jobId: string): void {
+  if (_editorReconnectAttempts >= EDITOR_MAX_RECONNECT) {
+    // Give up reconnecting — clear stale progress state and notify user
+    state.jobProgress = null;
+    state.jobStage = null;
+    state.jobDetail = null;
+    showWarning('Lost connection to processing job — reload the page to check status');
+    return;
+  }
+
+  _editorReconnectAttempts++;
+  const delay = EDITOR_RECONNECT_BASE_MS * Math.pow(1.5, _editorReconnectAttempts - 1);
+
+  _editorReconnectTimer = setTimeout(async () => {
+    _editorReconnectTimer = null;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      if (!res.ok) return;
+      const job = await res.json();
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        // Job finished while disconnected
+        state.jobProgress = null;
+        state.jobStage = null;
+        state.jobDetail = null;
+        if (job.status === 'completed' && state.memoId) {
+          initEditor(state.memoId);
+          showSuccess('Processing completed');
+        } else if (job.status === 'failed') {
+          showError(`Processing failed: ${job.error_message ?? 'Unknown error'}`);
+        }
+        return;
+      }
+
+      // Job still active — reconnect SSE
+      _editorReconnectAttempts = 0;
+      connectEditorSSE(jobId);
+    } catch {
+      _tryReconnectEditorSSE(jobId);
+    }
+  }, delay);
 }
 
 function disconnectEditorSSE(): void {
@@ -578,6 +630,11 @@ function disconnectEditorSSE(): void {
     _editorEventSource.close();
     _editorEventSource = null;
   }
+  if (_editorReconnectTimer) {
+    clearTimeout(_editorReconnectTimer);
+    _editorReconnectTimer = null;
+  }
+  _editorReconnectAttempts = 0;
 }
 
 /**

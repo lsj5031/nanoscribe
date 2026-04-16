@@ -327,16 +327,13 @@
         {memo?.title ?? 'Untitled'}
       </h1>
 
-      <!-- Active job progress indicator -->
+      <!-- Active job progress indicator (compact, in toolbar) -->
       {#if jobProgress !== null}
         <div class="flex items-center gap-3">
-          <div class="h-1.5 w-24 overflow-hidden bg-[#1A1A1A]/10 rounded-none">
-            <div
-              class="h-full bg-[#D4AF37] transition-all duration-500 ease-luxury"
-              style="width: {Math.round(jobProgress * 100)}%"
-            ></div>
-          </div>
-          <span class="text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 whitespace-nowrap">
+          <div class="h-2 w-2 animate-pulse rounded-full bg-[#D4AF37]"></div>
+          <span
+            class="text-xs uppercase tracking-[0.2em] text-[#D4AF37] whitespace-nowrap font-medium"
+          >
             {jobStage ? getStatusLabel(jobStage) : 'Processing'}{jobDetail ? ` · ${jobDetail}` : ''}
           </span>
         </div>
@@ -398,6 +395,37 @@
         </button>
       {/if}
     </div>
+
+    <!-- Processing progress banner (visible below toolbar when job is active) -->
+    {#if jobProgress !== null}
+      <div
+        class="flex shrink-0 items-center gap-4 border-b border-[#1A1A1A]/10 bg-[#D4AF37]/5 px-12 py-2"
+      >
+        <div class="h-1.5 flex-1 overflow-hidden bg-[#1A1A1A]/10 rounded-none">
+          {#if jobProgress > 0 && jobProgress < 0.2}
+            <div class="relative h-full w-full">
+              <div
+                class="h-full bg-[#D4AF37]/60 transition-all duration-500 ease-luxury"
+                style="width: {Math.round(jobProgress * 100)}%"
+              ></div>
+              <div
+                class="absolute inset-0 h-full w-full animate-pulse bg-gradient-to-r from-[#D4AF37]/0 via-[#D4AF37]/40 to-[#D4AF37]/0"
+              ></div>
+            </div>
+          {:else}
+            <div
+              class="h-full bg-[#D4AF37] transition-all duration-500 ease-luxury"
+              style="width: {Math.round(jobProgress * 100)}%"
+            ></div>
+          {/if}
+        </div>
+        <span
+          class="text-xs uppercase tracking-[0.2em] text-[#1A1A1A]/60 tabular-nums whitespace-nowrap"
+        >
+          {Math.round(jobProgress * 100)}%
+        </span>
+      </div>
+    {/if}
 
     <!-- Two-pane layout -->
     <div bind:this={containerEl} class="relative flex flex-1 overflow-hidden p-0 gap-0">

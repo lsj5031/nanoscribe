@@ -14,6 +14,7 @@ from app.api.export import router as export_router
 from app.api.jobs import router as jobs_router
 from app.api.library import router as library_router
 from app.api.memos import router as memos_router
+from app.api.openai_compat import router as openai_compat_router
 from app.api.search import router as search_router
 from app.api.segments import router as segments_router
 from app.api.speakers import router as speakers_router
@@ -119,6 +120,7 @@ def create_app() -> FastAPI:
     app.include_router(segments_router, prefix="/api")
     app.include_router(speakers_router, prefix="/api")
     app.include_router(export_router, prefix="/api")
+    app.include_router(openai_compat_router)  # /v1/audio/transcriptions (OpenAI-compatible)
 
     # Serve built SPA static files in production
     # SvelteKit adapter-static produces: 200.html (fallback), _app/ (immutable assets), favicon.png

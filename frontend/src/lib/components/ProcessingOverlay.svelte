@@ -17,6 +17,11 @@
     active?.status === 'completed' || active?.status === 'failed' || active?.status === 'cancelled'
   );
 
+  // Check if job is in early stages (queued or at 0% progress)
+  const isQueued = $derived(
+    !isTerminal && (active?.status === 'queued' || (active?.progress ?? 0) < 0.01)
+  );
+
   async function handleCancel() {
     cancelling = true;
     await cancelUpload();
@@ -45,6 +50,10 @@
     >
       <!-- Progress ring -->
       <div class="relative flex items-center justify-center">
+        <!-- Pulsing glow when queued/at 0% -->
+        {#if isQueued}
+          <div class="absolute h-32 w-32 animate-pulse rounded-full bg-accent/10"></div>
+        {/if}
         <svg class="h-32 w-32 -rotate-90" viewBox="0 0 120 120">
           <!-- Background circle -->
           <circle
@@ -70,14 +79,26 @@
             stroke-width="2"
             stroke-linecap="square"
             stroke-dasharray={CIRCUMFERENCE}
-            stroke-dashoffset={strokeDashoffset}
+            stroke-dashoffset={isQueued ? CIRCUMFERENCE * 0.92 : strokeDashoffset}
             class="transition-[stroke-dashoffset] duration-500 ease-luxury"
           />
         </svg>
         <div class="absolute flex flex-col items-center">
-          <span class="font-serif text-3xl text-text-primary">
-            {getProgressPercent(active.progress)}
-          </span>
+          {#if isQueued}
+            <!-- Indeterminate spinner dots when queued -->
+            <div class="flex items-center gap-1">
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent [animation-delay:0ms]"
+              ></span>
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent [animation-delay:150ms]"
+              ></span>
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent [animation-delay:300ms]"
+              ></span>
+            </div>
+          {:else}
+            <span class="font-serif text-3xl text-text-primary">
+              {getProgressPercent(active.progress)}
+            </span>
+          {/if}
         </div>
       </div>
 

@@ -37,11 +37,36 @@ def setup_data_dir(tmp_path: Path):
     system_mod.DATA_DIR = test_data
     status_mod.DATA_DIR = test_data
 
+    # Clean engine settings from the shared test DB so no test
+    # sees stale remote-engine data from a previous test run.
+    _clean_engine_settings()
+
     yield test_data
 
     main_mod.DATA_DIR = original_data
     system_mod.DATA_DIR = original_sys_data
     status_mod.DATA_DIR = original_status_data
+
+    # Clean up again after the test
+    _clean_engine_settings()
+
+
+def _clean_engine_settings() -> None:
+    """Remove all system_settings rows and reset the models singleton."""
+    from app.core.config import get_settings
+    from app.services.transcription import reset_models
+
+    db_path = get_settings().db_path
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("DELETE FROM system_settings")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+    reset_models()
 
 
 @pytest.fixture
@@ -683,3 +708,297 @@ class TestReadinessEndpoint:
         assert data["models"]["vad"]["name"] == "fsmn-vad"
         assert data["models"]["punc"]["name"] == "ct-punc"
         assert data["models"]["diarization"]["name"] == "CAM++"
+
+
+# ---------------------------------------------------------------------------
+# Engine settings endpoint tests
+# ---------------------------------------------------------------------------
+class TestEngineSettingsEndpoint:
+    """GET/PUT /api/system/settings/engine for transcription engine config."""
+
+    def _get_db_path(self) -> Path:
+        """Return the DB path used by the API (derived from Settings)."""
+        from app.core.config import get_settings
+
+        return get_settings().db_path
+
+    def setup_method(self) -> None:
+        """Reset engine settings before each test for isolation."""
+        db_path = self._get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("DELETE FROM system_settings")
+        conn.commit()
+        conn.close()
+
+        from app.services.transcription import reset_models
+
+        reset_models()
+
+    @classmethod
+    def teardown_class(cls) -> None:
+        """Clean up engine settings after all tests in this class."""
+        from app.core.config import get_settings
+        from app.services.transcription import reset_models
+
+        db_path = get_settings().db_path
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("DELETE FROM system_settings")
+        conn.commit()
+        conn.close()
+        reset_models()
+
+    def test_get_engine_settings_returns_200(self, client):
+        """GET /api/system/settings/engine returns HTTP 200."""
+        resp = client.get("/api/system/settings/engine")
+        assert resp.status_code == 200
+
+    def test_get_engine_settings_has_required_fields(self, client):
+        """Response contains engine, remote_url, remote_api_key, remote_model."""
+        resp = client.get("/api/system/settings/engine")
+        data = resp.json()
+        assert "engine" in data
+        assert "remote_url" in data
+        assert "remote_api_key" in data
+        assert "remote_model" in data
+
+    def test_get_engine_settings_defaults_to_local(self, client):
+        """Default engine is local when no remote URL is configured."""
+        resp = client.get("/api/system/settings/engine")
+        data = resp.json()
+        assert data["engine"] == "local"
+        assert data["remote_url"] == ""
+        assert data["remote_model"] == "whisper-1"
+
+    def test_api_key_masked_in_get(self, client):
+        """API key is masked in GET response."""
+        db_path = self._get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('engine', 'remote') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_url', 'https://api.openai.com/v1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_api_key', 'sk-secret-key') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_model', 'whisper-1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.commit()
+        conn.close()
+
+        resp = client.get("/api/system/settings/engine")
+        data = resp.json()
+        assert data["remote_api_key"] == "********"
+        assert data["engine"] == "remote"
+
+    def test_put_engine_settings_switches_to_remote(self, client):
+        """PUT can switch engine to remote and persists to DB."""
+        resp = client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_model": "whisper-1",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["engine"] == "remote"
+        assert data["remote_url"] == "https://api.openai.com/v1"
+
+        # Verify persisted in DB
+        db_path = self._get_db_path()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("SELECT value FROM system_settings WHERE key = 'engine'").fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "remote"
+
+    def test_put_engine_settings_switches_to_local(self, client):
+        """PUT can switch engine back to local."""
+        # First switch to remote
+        client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_model": "whisper-1",
+            },
+        )
+
+        # Now switch to local
+        resp = client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "local",
+                "remote_url": "",
+                "remote_model": "whisper-1",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["engine"] == "local"
+
+    def test_put_remote_without_url_returns_422(self, client):
+        """PUT with engine=remote but empty URL returns 422."""
+        resp = client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "",
+                "remote_model": "whisper-1",
+            },
+        )
+        assert resp.status_code == 422
+        assert "URL" in resp.json()["detail"]
+
+    def test_put_preserves_api_key_when_masked(self, client):
+        """PUT with masked API key placeholder preserves the existing key."""
+        db_path = self._get_db_path()
+
+        # Set up remote with an API key
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('engine', 'remote') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_url', 'https://api.openai.com/v1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_api_key', 'sk-original-key') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_model', 'whisper-1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.commit()
+        conn.close()
+
+        # Update with masked key — should preserve original
+        resp = client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_api_key": "********",
+                "remote_model": "whisper-1",
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify key preserved in DB
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("SELECT value FROM system_settings WHERE key = 'remote_api_key'").fetchone()
+        conn.close()
+        assert row[0] == "sk-original-key"
+
+    def test_put_preserves_api_key_when_null(self, client):
+        """PUT with remote_api_key=null preserves the existing key."""
+        db_path = self._get_db_path()
+
+        # Set up remote with an API key
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('engine', 'remote') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_url', 'https://api.openai.com/v1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_api_key', 'sk-original-key') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.execute(
+            "INSERT INTO system_settings (key, value) VALUES ('remote_model', 'whisper-1') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        conn.commit()
+        conn.close()
+
+        # Update with null key — should preserve original
+        resp = client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_api_key": None,
+                "remote_model": "whisper-1",
+            },
+        )
+        assert resp.status_code == 200
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("SELECT value FROM system_settings WHERE key = 'remote_api_key'").fetchone()
+        conn.close()
+        assert row[0] == "sk-original-key"
+
+    def test_put_preserves_remote_settings_on_local_switch(self, client):
+        """Switching to local preserves remote URL/model in DB for easy switching back."""
+        db_path = self._get_db_path()
+
+        # First configure remote
+        client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_api_key": "sk-test",
+                "remote_model": "whisper-1",
+            },
+        )
+
+        # Switch to local
+        client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "local",
+                "remote_url": "",
+                "remote_model": "whisper-1",
+            },
+        )
+
+        # Verify remote URL and API key still in DB
+        conn = sqlite3.connect(str(db_path))
+        url = conn.execute("SELECT value FROM system_settings WHERE key = 'remote_url'").fetchone()
+        key = conn.execute("SELECT value FROM system_settings WHERE key = 'remote_api_key'").fetchone()
+        conn.close()
+        assert url[0] == "https://api.openai.com/v1"
+        assert key[0] == "sk-test"
+
+    def test_put_resets_models_singleton(self, client):
+        """PUT resets the models singleton so next get_models() picks up new config."""
+        from app.services.transcription import get_models, reset_models
+
+        # Force local initialization
+        reset_models()
+        models_before = get_models()
+        assert type(models_before).__name__ == "TranscriptionModels"
+
+        # Switch to remote
+        client.put(
+            "/api/system/settings/engine",
+            json={
+                "engine": "remote",
+                "remote_url": "https://api.openai.com/v1",
+                "remote_api_key": "sk-test",
+                "remote_model": "whisper-1",
+            },
+        )
+
+        # After reset, get_models should return RemoteTranscriptionService
+        models_after = get_models()
+        assert type(models_after).__name__ == "RemoteTranscriptionService"
+
+        # Clean up
+        reset_models()

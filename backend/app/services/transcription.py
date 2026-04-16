@@ -81,6 +81,174 @@ class TranscriptionError(Exception):
     pass
 
 
+class RemoteTranscriptionService:
+    """Transcription via an external OpenAI-compatible /v1/audio/transcriptions API.
+
+    When NANOSCRIBE_REMOTE_ASR_URL is configured, this service replaces the
+    local FunASR pipeline.  It sends the normalized audio to a remote endpoint
+    (OpenAI, Groq, etc.) and converts the OpenAI verbose_json response into
+    the same ``{raw_output, text, segments}`` format that the local pipeline
+    produces — so the rest of NanoScribe (worker, persistence, diarization)
+    works unchanged.
+
+    Advantages: no GPU needed locally; supports any Whisper-compatible provider.
+    Trade-offs: per-request API cost; network latency; no per-chunk progress.
+    """
+
+    def __init__(self, url: str, api_key: str, model: str, timeout: int = 900) -> None:
+        self.url = url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout  # Base timeout in seconds (scaled up for large files)
+
+    @property
+    def is_loaded(self) -> bool:
+        """Remote service is always "loaded" (no local models to check)."""
+        return True
+
+    def load(self) -> None:
+        """No-op — remote service needs no local model loading."""
+        pass
+
+    @property
+    def device(self) -> str:
+        """Return 'remote' to indicate cloud-based inference."""
+        return "remote"
+
+    def transcribe(
+        self,
+        audio_path: str | Path,
+        hotwords: str | None = None,
+        chunk_callback: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
+        """Call the remote ASR API and return results in local pipeline format.
+
+        Sends the normalized WAV as multipart/form-data to the configured
+        OpenAI-compatible endpoint requesting ``verbose_json`` to get
+        segment-level timestamps.  Converts the response into the same
+        dict shape that ``TranscriptionModels.transcribe`` returns.
+        """
+        import httpx
+
+        logger.info(
+            "remote_transcribe_start",
+            audio=str(audio_path),
+            url=self.url,
+            model=self.model,
+        )
+        t0 = time.monotonic()
+
+        # Build the request matching OpenAI spec.
+        # NANOSCRIBE_REMOTE_ASR_URL should include the /v1 prefix
+        # (e.g. https://api.openai.com/v1 or https://api.groq.com/openai/v1),
+        # matching the convention of the OpenAI Python SDK's base_url.
+        url = f"{self.url}/audio/transcriptions"
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        data: dict[str, str] = {
+            "model": self.model,
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": "segment",
+        }
+        if hotwords:
+            data["prompt"] = hotwords
+
+        try:
+            with open(audio_path, "rb") as f:
+                files = {"file": ("audio.wav", f, "audio/wav")}
+
+                # Dynamic timeout — scale with audio file size.
+                # Heuristic: ~1s per 100KB of WAV, with a floor of self.timeout.
+                # Size scaling only exceeds the floor for very large files (>90MB at default 900s).
+                # A 150MB file → ~1500s; a 45MB file → 900s floor (was timing out at old 300s).
+                audio_size = audio_path.stat().st_size if isinstance(audio_path, Path) else 0
+                size_based_timeout = max(self.timeout, audio_size // 100_000)
+                # Cap at 30 minutes to prevent infinite hangs
+                dynamic_timeout = min(size_based_timeout, 1800)
+                logger.info(
+                    "remote_transcribe_timeout",
+                    base_timeout=self.timeout,
+                    audio_size_mb=round(audio_size / 1_000_000, 1),
+                    dynamic_timeout_s=dynamic_timeout,
+                )
+                with httpx.Client(timeout=httpx.Timeout(float(dynamic_timeout), connect=30.0)) as client:
+                    resp = client.post(url, data=data, files=files, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise TranscriptionError(f"Remote ASR request timed out: {exc}") from exc
+        except httpx.ConnectError as exc:
+            raise TranscriptionError(f"Remote ASR connection failed: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise TranscriptionError(f"Remote ASR request failed: {exc}") from exc
+
+        if resp.status_code != 200:
+            logger.error(
+                "remote_transcribe_failed",
+                status=resp.status_code,
+                body=resp.text[:500],
+            )
+            raise TranscriptionError(f"Remote ASR returned HTTP {resp.status_code}: {resp.text[:200]}")
+
+        try:
+            res_json = resp.json()
+        except Exception as exc:
+            raise TranscriptionError(f"Remote ASR returned invalid JSON: {exc}") from exc
+
+        # ── Convert OpenAI verbose_json → local pipeline format ──────
+        text = res_json.get("text", "").strip()
+
+        segments: list[dict[str, Any]] = []
+        for seg in res_json.get("segments", []):
+            # OpenAI segments use seconds; local pipeline uses milliseconds
+            start_s = seg.get("start", 0.0)
+            end_s = seg.get("end", 0.0)
+            # avg_logprob is negative; convert to a 0–1 confidence heuristic
+            avg_logprob = seg.get("avg_logprob", 0.0)
+            confidence = min(1.0, max(0.0, 1.0 + avg_logprob))  # e.g. -0.3 → 0.7
+            segments.append(
+                {
+                    "start_ms": int(round(start_s * 1000)),
+                    "end_ms": int(round(end_s * 1000)),
+                    "text": seg.get("text", "").strip(),
+                    "confidence": round(confidence, 4),
+                }
+            )
+
+        # Fallback: if no segments but we have text, create a single segment
+        if not segments and text:
+            duration_s = res_json.get("duration", 0.0)
+            segments.append(
+                {
+                    "start_ms": 0,
+                    "end_ms": int(round(duration_s * 1000)),
+                    "text": text,
+                    "confidence": 1.0,
+                }
+            )
+
+        # Notify progress (single "chunk")
+        if chunk_callback is not None:
+            try:
+                chunk_callback(1, 1)
+            except Exception:
+                pass
+
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "remote_transcribe_done",
+            segment_count=len(segments),
+            text_length=len(text),
+            elapsed_s=round(elapsed, 2),
+        )
+
+        return {
+            "raw_output": [res_json],
+            "text": text,
+            "segments": segments,
+        }
+
+
 class TranscriptionModels:
     """FunASR model manager with ephemeral GPU inference.
 
@@ -882,20 +1050,99 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def get_active_engine_config() -> dict[str, str]:
+    """Merge environment-variable defaults with database overrides.
+
+    Returns a dict with keys: engine, remote_url, remote_api_key, remote_model.
+    The ``engine`` value is "remote" if a remote URL is configured (via
+    env var or DB override), otherwise "local".
+    """
+    config: dict[str, str] = {
+        "engine": "remote" if _settings.remote_asr_url else "local",
+        "remote_url": _settings.remote_asr_url,
+        "remote_api_key": _settings.remote_asr_api_key,
+        "remote_model": _settings.remote_asr_model,
+        "remote_timeout": str(_settings.remote_asr_timeout),
+    }
+
+    db_path = _settings.db_path
+    if not db_path.exists():
+        return config
+
+    try:
+        from app.db import db_connection
+
+        with db_connection(db_path) as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM system_settings "
+                "WHERE key IN ('engine', 'remote_url', 'remote_api_key', 'remote_model', 'remote_timeout')"
+            ).fetchall()
+            for k, v in rows:
+                config[k] = v
+    except Exception as exc:
+        logger.warning("failed_to_read_settings_db", error=str(exc))
+
+    return config
+
+
+def reset_models() -> None:
+    """Clear the active model singleton so the next call re-evaluates config.
+
+    Called after engine settings are changed via the API so that the
+    next transcription job picks up the new engine without restart.
+    """
+    global _models
+    _models = None
+    logger.info("transcription_models_reset")
+
+
 # Module-level singleton for model management
-_models: TranscriptionModels | None = None
+_models: TranscriptionModels | RemoteTranscriptionService | None = None
 
 
-def get_models() -> TranscriptionModels:
-    """Return the singleton TranscriptionModels instance."""
+def get_models() -> TranscriptionModels | RemoteTranscriptionService:
+    """Return the singleton transcription service instance.
+
+    Reads the active engine config (env vars + DB overrides) to decide
+    whether to use local FunASR or a remote OpenAI-compatible API.
+    """
     global _models
     if _models is None:
-        _models = TranscriptionModels()
+        config = get_active_engine_config()
+        if config["engine"] == "remote" and config["remote_url"]:
+            url = config["remote_url"]
+            if not url.rstrip("/").endswith("/v1"):
+                logger.warning(
+                    "remote_asr_url_missing_v1",
+                    hint="NANOSCRIBE_REMOTE_ASR_URL should include /v1 prefix (e.g. https://api.openai.com/v1)",
+                    url=url,
+                )
+            logger.info(
+                "using_remote_asr",
+                url=url,
+                model=config["remote_model"],
+            )
+            _models = RemoteTranscriptionService(
+                url=url,
+                api_key=config["remote_api_key"],
+                model=config["remote_model"],
+                timeout=int(config.get("remote_timeout", _settings.remote_asr_timeout)),
+            )
+        else:
+            logger.info("using_local_asr")
+            _models = TranscriptionModels()
     return _models
 
 
 def is_model_ready() -> bool:
-    """Check if the ASR model is loaded and ready."""
+    """Check if the ASR model is loaded and ready.
+
+    Always returns True for remote ASR (no local models to verify).
+    """
     if _models is None:
+        # If remote ASR is configured, report ready even before first call
+        config = get_active_engine_config()
+        if config["engine"] == "remote" and config["remote_url"]:
+            return True
         return False
     return _models.is_loaded

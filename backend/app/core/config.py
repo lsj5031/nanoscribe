@@ -31,6 +31,11 @@ class Settings:
     host: str = "0.0.0.0"
     port: int = 8000
     offline: bool = field(default_factory=lambda: os.environ.get("NANOSCRIBE_OFFLINE", "0") == "1")
+    api_key: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_API_KEY", ""))
+    remote_asr_url: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_URL", ""))
+    remote_asr_api_key: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_API_KEY", ""))
+    remote_asr_model: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_MODEL", "whisper-1"))
+    remote_asr_timeout: int = field(default_factory=lambda: int(os.environ.get("NANOSCRIBE_REMOTE_ASR_TIMEOUT", "900")))
 
     @property
     def db_path(self) -> Path:
