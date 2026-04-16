@@ -20,6 +20,19 @@ from app.services.transcription import get_active_engine_config, reset_models
 
 router = APIRouter(tags=["system"])
 
+
+def _engine_response_from_config(config: dict[str, str]) -> EngineSettingsResponse:
+    """Build an EngineSettingsResponse from a config dict, masking the API key."""
+    masked_key = "********" if config["remote_api_key"] else ""
+    return EngineSettingsResponse(
+        engine=config["engine"],
+        remote_url=config["remote_url"],
+        remote_api_key=masked_key,
+        remote_model=config["remote_model"],
+        remote_timeout=int(config.get("remote_timeout", 900)),
+    )
+
+
 _settings = get_settings()
 DATA_DIR = _settings.data_dir
 
@@ -99,12 +112,7 @@ async def get_engine_settings() -> EngineSettingsResponse:
     The API key is masked in the response for security.
     """
     config = get_active_engine_config()
-    # Mask the API key for display
-    if config["remote_api_key"]:
-        config["remote_api_key"] = "********"
-    # Convert string values from DB to proper types
-    config["remote_timeout"] = int(config.get("remote_timeout", 900))
-    return EngineSettingsResponse(**config)
+    return _engine_response_from_config(config)
 
 
 @router.put("/settings/engine", response_model=EngineSettingsResponse)
@@ -161,7 +169,4 @@ async def update_engine_settings(data: EngineSettingsUpdate) -> EngineSettingsRe
 
     # Return the updated config (with masked key)
     updated = get_active_engine_config()
-    if updated["remote_api_key"]:
-        updated["remote_api_key"] = "********"
-    updated["remote_timeout"] = int(updated.get("remote_timeout", 900))
-    return EngineSettingsResponse(**updated)
+    return _engine_response_from_config(updated)

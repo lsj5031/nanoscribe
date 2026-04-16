@@ -643,13 +643,33 @@ class TestMergeVadSegments:
 
 class TestModuleFunctions:
     def test_get_models_creates_singleton(self):
-        models = get_models()
-        assert isinstance(models, TranscriptionModels)
-        # Second call returns same instance
-        assert get_models() is models
+        with patch(
+            "app.services.transcription.get_active_engine_config",
+            return_value={
+                "engine": "local",
+                "remote_url": "",
+                "remote_api_key": "",
+                "remote_model": "whisper-1",
+                "remote_timeout": "900",
+            },
+        ):
+            models = get_models()
+            assert isinstance(models, TranscriptionModels)
+            # Second call returns same instance
+            assert get_models() is models
 
     def test_is_model_ready_false_initially(self):
-        assert not is_model_ready()
+        with patch(
+            "app.services.transcription.get_active_engine_config",
+            return_value={
+                "engine": "local",
+                "remote_url": "",
+                "remote_api_key": "",
+                "remote_model": "whisper-1",
+                "remote_timeout": "900",
+            },
+        ):
+            assert not is_model_ready()
 
 
 # ---------------------------------------------------------------------------
@@ -709,6 +729,7 @@ class TestTranscriptionIntegration:
             pytest.skip("VAD example WAV not found in cache")
 
         models = get_models()
+        assert isinstance(models, TranscriptionModels)
         models.load()
         segments = models.run_vad(example_wav)
 
