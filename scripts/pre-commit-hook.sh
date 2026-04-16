@@ -8,14 +8,14 @@ echo "=== Pre-commit: file hygiene ==="
 
 # Remove trailing whitespace from staged files
 git diff --cached --name-only --diff-filter=ACM | while read -r f; do
-  if [ -f "$f" ]; then
+  if [ -f "$f" ] && ! [[ "$f" =~ \.(png|jpg|jpeg|gif|ico|webp)$ ]]; then
     sed -i 's/[[:space:]]*$//' "$f"
   fi
 done
 
 # Ensure newline at end of file
 git diff --cached --name-only --diff-filter=ACM | while read -r f; do
-  if [ -f "$f" ] && [ -s "$f" ] && [ "$(tail -c 1 "$f" | wc -l)" -eq 0 ]; then
+  if [ -f "$f" ] && [ -s "$f" ] && ! [[ "$f" =~ \.(png|jpg|jpeg|gif|ico|webp)$ ]] && [ "$(tail -c 1 "$f" | wc -l)" -eq 0 ]; then
     echo "" >> "$f"
   fi
 done
