@@ -69,9 +69,11 @@ make dev
 | `make frontend-build` | Build the frontend SPA inside the container |
 | `make dev` | Start dev environment with hot reload |
 | `make shell` | Open an interactive shell in the container |
-| `make check` | Run all quality checks (lint, format, typecheck) |
+| `make check` | Run all quality checks (lint, format, typecheck, tests) |
 | `make backend-check` | Run backend checks (ruff format, ruff check, ty check) |
+| `make backend-test` | Run backend pytest suite inside Docker |
 | `make frontend-check` | Run frontend checks (svelte-check, prettier) |
+| `make test` | Run all tests (currently backend pytest) |
 | `make hooks-install` | Install pre-commit hooks |
 | `make smoke` | Verify FunASR and ModelScope imports |
 | `make clean` | Remove built images and stop containers |
@@ -230,12 +232,16 @@ pnpm build             # Production build
 ### Testing
 
 ```bash
-# Full backend test suite
-docker compose exec funasr bash -c "cd /app/backend && python -m pytest -v"
+# Full backend test suite (preferred entry point)
+make backend-test
 
-# Specific test files
-docker compose exec funasr bash -c "cd /app/backend && python -m pytest tests/test_transcription.py -v"
+# Or run pytest directly inside the container for fine-grained control
+docker compose exec funasr bash -c "cd /app/backend && pytest -v"
+docker compose exec funasr bash -c "cd /app/backend && pytest tests/test_transcription.py -v"
 ```
+
+`make check` runs lint + type checks + the full pytest suite, mirroring the
+[CI workflow](.github/workflows/check.yml).
 
 ## Specification
 

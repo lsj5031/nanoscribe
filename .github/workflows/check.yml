@@ -31,6 +31,9 @@ jobs:
       - name: ty check
         run: ty check .
 
+      - name: pytest
+        run: pytest -q
+
   frontend-check:
     runs-on: ubuntu-latest
     defaults:

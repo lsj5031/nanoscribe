@@ -24,9 +24,17 @@ done
 git diff --cached --name-only --diff-filter=ACM | xargs -r git add
 
 echo "=== Pre-commit: backend checks (Docker) ==="
-docker compose exec funasr bash -c "cd /app/backend && ruff format --check . && ruff check ."
+# Use `exec` if the dev container is already running (much faster), otherwise
+# fall back to `run --rm` so the hook still works on a clean checkout.
+if docker compose ps --status running --services 2>/dev/null | grep -q '^funasr$'; then
+  DC="docker compose exec -T funasr"
+else
+  DC="docker compose run --rm -T funasr"
+fi
+
+$DC bash -c "cd /app/backend && ruff format --check . && ruff check ."
 
 echo "=== Pre-commit: frontend checks (Docker) ==="
-docker compose exec funasr bash -c "cd /app/frontend && pnpm format:check"
+$DC bash -c "cd /app/frontend && pnpm format:check"
 
 echo "=== Pre-commit checks passed ==="

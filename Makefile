@@ -1,4 +1,4 @@
-.PHONY: build build-dev build-prod shell run smoke dev frontend-build check backend-check frontend-check hooks-install clean help
+.PHONY: build build-dev build-prod shell run smoke dev frontend-build check backend-check backend-test frontend-check test hooks-install clean help
 
 .DEFAULT_GOAL := help
 
@@ -19,9 +19,11 @@ help: ## Show this help
 	@echo "  shell           Open an interactive shell with GPU and caches mounted"
 	@echo "  run             Run a one-shot readiness check"
 	@echo "  smoke           Verify funasr and modelscope imports"
-	@echo "  check           Run all quality checks inside Docker"
+	@echo "  check           Run all quality checks (lint + tests) inside Docker"
 	@echo "  backend-check   Run backend quality checks (ruff format, ruff check, ty check)"
+	@echo "  backend-test    Run backend pytest suite inside Docker"
 	@echo "  frontend-check  Run frontend quality checks (svelte-check, prettier)"
+	@echo "  test            Run all tests (currently backend pytest)"
 	@echo "  hooks-install   Install pre-commit hooks"
 	@echo "  clean           Remove the built image"
 
@@ -62,6 +64,7 @@ check:
 	@echo "=== Running all quality checks inside Docker ==="
 	@$(MAKE) backend-check
 	@$(MAKE) frontend-check
+	@$(MAKE) test
 	@echo "=== All quality checks passed ==="
 
 backend-check:
@@ -71,6 +74,12 @@ backend-check:
 	docker compose exec funasr bash -c "cd /app/backend && ruff check ."
 	@echo "--- Backend: ty check ---"
 	docker compose exec funasr bash -c "cd /app/backend && ty check ."
+
+backend-test:
+	@echo "--- Backend: pytest ---"
+	docker compose exec funasr bash -c "cd /app/backend && pytest -q"
+
+test: backend-test
 
 frontend-check:
 	@echo "--- Frontend: svelte-check ---"
