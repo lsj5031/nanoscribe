@@ -2,8 +2,8 @@
 
 .DEFAULT_GOAL := help
 
-IMAGE ?= funasr
-BASE_IMAGE ?= glm-asr-glm-asr:latest
+IMAGE ?= nanoscribe
+BASE_IMAGE ?= nvidia/cuda:12.4.1-runtime-ubuntu22.04
 HOST_PORT ?= 8000
 
 help: ## Show this help

@@ -45,12 +45,34 @@ A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voic
 - Docker & Docker Compose
 - **Local inference:** NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 - **Remote inference:** Any OpenAI-compatible API endpoint (no GPU needed)
-- Base image: `glm-asr-glm-asr:latest` (pre-built CUDA/PyTorch image)
 
-## Quick Start
+## Run it (no build required)
+
+The fastest way to try NanoScribe is to pull the prebuilt image from GHCR:
 
 ```bash
-# Build the dev image
+mkdir -p data
+docker run -d --name nanoscribe --gpus all \
+  -p 8000:8000 -v "$(pwd)/data:/app/data" \
+  --restart unless-stopped \
+  ghcr.io/lsj5031/nanoscribe:latest
+# open http://localhost:8000
+```
+
+Or with Docker Compose:
+
+```bash
+curl -O https://raw.githubusercontent.com/lsj5031/nanoscribe/main/compose.run.yml
+docker compose -f compose.run.yml up -d
+```
+
+On first run the FunASR models (~2 GB) are downloaded into `./data/.modelscope_cache`.
+Subsequent starts use the local cache.
+
+## Build from source
+
+```bash
+# Build the dev image (uses public nvidia/cuda base by default)
 make build
 
 # Start the dev server (http://localhost:8000)

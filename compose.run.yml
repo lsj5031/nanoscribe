@@ -1,0 +1,39 @@
+# NanoScribe — end-user runtime compose file.
+#
+# Pulls the published image from GHCR. No source tree, no bind mounts on code,
+# only a single ./data volume for the SQLite DB, audio files, and model cache.
+#
+# Usage:
+#   docker compose -f compose.run.yml up -d
+#   open http://localhost:8000
+#
+# Requires an NVIDIA GPU + nvidia-container-toolkit on the host.
+#
+services:
+  nanoscribe:
+    image: ghcr.io/lsj5031/nanoscribe:latest
+    container_name: nanoscribe
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NANOSCRIBE_DATA_DIR=/app/data
+      - MODELSCOPE_CACHE=/app/data/.modelscope_cache
+      - NANOSCRIBE_OFFLINE=0
+      - HF_HUB_OFFLINE=0
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      # Optional: bearer token for the OpenAI-compatible /v1/audio/transcriptions endpoint.
+      # - NANOSCRIBE_API_KEY=change-me
+      # Optional: use a remote OpenAI-compatible API instead of the local GPU.
+      # - NANOSCRIBE_REMOTE_ASR_URL=https://api.openai.com/v1
+      # - NANOSCRIBE_REMOTE_ASR_API_KEY=sk-...
+      # - NANOSCRIBE_REMOTE_ASR_MODEL=whisper-1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

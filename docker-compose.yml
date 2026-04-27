@@ -3,10 +3,10 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: ${BASE_IMAGE:-glm-asr-glm-asr:latest}
+        BASE_IMAGE: ${BASE_IMAGE:-nvidia/cuda:12.4.1-runtime-ubuntu22.04}
       target: ${DOCKER_TARGET:-dev}
-    image: funasr:latest
-    container_name: funasr
+    image: nanoscribe:dev
+    container_name: nanoscribe-dev
     stdin_open: true
     tty: true
     ports:
