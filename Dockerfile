@@ -67,6 +67,7 @@ RUN /app/venv/bin/pip install \
         "soundfile>=0.12" \
         "pydub>=0.25" \
         "ffmpeg-python>=0.2" \
+        "python-multipart>=0.12" \
         "numpy<2.0.0"
 
 ENV PATH="/app/venv/bin:${PATH}" \
