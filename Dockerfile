@@ -104,7 +104,8 @@ RUN /app/venv/bin/pip install \
 # (see backend/app/services/diarization.py).
 # We deliberately do NOT install its requirements.txt — it pins numpy<1.24
 # and scikit-learn==1.0.2 which conflict with pyannote.audio.
-RUN git clone --depth 1 https://github.com/modelscope/3D-Speaker.git /opt/3D-Speaker
+RUN git clone --depth 1 https://github.com/modelscope/3D-Speaker.git /opt/3D-Speaker \
+    && chown -R appuser:appuser /opt/3D-Speaker
 
 # ---------------------------------------------------------------------------
 # Stage 3: dev — adds Node.js, pnpm, and Python dev tools (ruff, ty, pytest)
@@ -137,7 +138,7 @@ RUN cd /app/backend && /app/venv/bin/pip install --no-cache-dir -e ".[dev]" || t
 RUN cd /app/frontend && pnpm install --frozen-lockfile 2>/dev/null || pnpm install || true
 
 ENV HF_HUB_OFFLINE=0 \
-    MODELSCOPE_CACHE=/home/appuser/.cache/modelscope \
+    MODELSCOPE_CACHE=/app/data/.modelscope_cache \
     NANOSCRIBE_OFFLINE=0
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -185,6 +186,6 @@ ENV PATH="/app/venv/bin:${PATH}" \
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -fsS http://localhost:8000/api/system/health || exit 1
+    CMD curl -fsS http://localhost:8000/health || exit 1
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
