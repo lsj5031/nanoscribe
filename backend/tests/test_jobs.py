@@ -871,11 +871,17 @@ class TestJobAPIEndpoints:
             settings.db_path = tmp_path / "nanoscribe.db"
             mock_settings.return_value = settings
 
-            # Run migrations
-            run_migrations(tmp_path / "nanoscribe.db")
+            # Patch the module-level DATA_DIR in jobs.py and main.py
+            # since they cache settings at import time
+            with patch("app.api.jobs.DATA_DIR", tmp_path), \
+                 patch("app.main.DATA_DIR", tmp_path), \
+                 patch("app.main.STATIC_DIR", tmp_path / "static"):
 
-            app = create_app()
-            yield TestClient(app)
+                # Run migrations
+                run_migrations(tmp_path / "nanoscribe.db")
+
+                app = create_app()
+                yield TestClient(app)
 
     def test_get_job_not_found(self, client):
         response = client.get(f"/api/jobs/{uuid.uuid4()}")
