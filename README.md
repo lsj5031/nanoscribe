@@ -69,8 +69,6 @@ docker compose -f compose.run.yml up -d
 On first run the FunASR models (~2 GB) are downloaded into `./data/.modelscope_cache`.
 Subsequent starts use the local cache.
 
-> **Note:** If the image is not publicly accessible yet, you may need to make the GHCR package public at [github.com/users/lsj5031/packages/container/nanoscribe/settings](https://github.com/users/lsj5031/packages/container/nanoscribe/settings).
-
 ## Build from source
 
 ```bash
