@@ -873,10 +873,11 @@ class TestJobAPIEndpoints:
 
             # Patch the module-level DATA_DIR in jobs.py and main.py
             # since they cache settings at import time
-            with patch("app.api.jobs.DATA_DIR", tmp_path), \
-                 patch("app.main.DATA_DIR", tmp_path), \
-                 patch("app.main.STATIC_DIR", tmp_path / "static"):
-
+            with (
+                patch("app.api.jobs.DATA_DIR", tmp_path),
+                patch("app.main.DATA_DIR", tmp_path),
+                patch("app.main.STATIC_DIR", tmp_path / "static"),
+            ):
                 # Run migrations
                 run_migrations(tmp_path / "nanoscribe.db")
 
