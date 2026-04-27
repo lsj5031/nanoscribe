@@ -40,10 +40,6 @@ jobs:
       - name: pytest
         run: pytest -q --ignore=tests/test_transcription.py --ignore=tests/test_diarization.py
 
-      - name: Integration tests (requires ML deps)
-        if: false  # Skip integration tests in CI - they require GPU + models
-        run: pytest tests/test_transcription.py -x -k Integration -v || true
-
   frontend-check:
     runs-on: ubuntu-latest
     defaults:
