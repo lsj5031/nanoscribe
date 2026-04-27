@@ -69,9 +69,15 @@ docker compose -f compose.run.yml up -d
 On first run the FunASR models (~2 GB) are downloaded into `./data/.modelscope_cache`.
 Subsequent starts use the local cache.
 
+> **Note:** If the image is not publicly accessible yet, you may need to make the GHCR package public at [github.com/users/lsj5031/packages/container/nanoscribe/settings](https://github.com/users/lsj5031/packages/container/nanoscribe/settings).
+
 ## Build from source
 
 ```bash
+# Clone the repository
+git clone https://github.com/lsj5031/nanoscribe.git
+cd nanoscribe
+
 # Build the dev image (uses public nvidia/cuda base by default)
 make build
 
@@ -80,6 +86,18 @@ make dev
 
 # On first run, models will be downloaded from ModelScope (~2 GB).
 # Subsequent starts use the local cache.
+```
+
+## Quick Reference
+
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest development build |
+| `v0.1.0` | First stable release (recommended) |
+
+To use a specific version:
+```bash
+docker pull ghcr.io/lsj5031/nanoscribe:v0.1.0
 ```
 
 ## Make Commands
