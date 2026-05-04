@@ -187,7 +187,10 @@ function connectSSE(jobId: string): void {
           status: data.status ?? 'completed',
           stage: data.stage ?? data.status ?? 'completed',
           progress: data.progress ?? 1.0,
-          error_message: data.status === 'failed' ? (data.error_message ?? state.active.error_message) : undefined
+          error_message:
+            data.status === 'failed'
+              ? (data.error_message ?? state.active.error_message)
+              : undefined
         };
         // Auto-dismiss after a short delay (longer for failed so user can read error)
         const delay = data.status === 'failed' ? 4000 : 1500;
@@ -309,7 +312,8 @@ async function _finalPollJobStatus(jobId: string): Promise<void> {
           status: job.status,
           stage: job.status,
           progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress),
-          error_message: job.status === 'failed' ? (job.error_message ?? state.active.error_message) : undefined
+          error_message:
+            job.status === 'failed' ? (job.error_message ?? state.active.error_message) : undefined
         };
         // Auto-dismiss (longer for failed)
         const delay = job.status === 'failed' ? 4000 : 1500;

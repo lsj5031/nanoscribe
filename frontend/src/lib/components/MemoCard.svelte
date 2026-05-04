@@ -170,7 +170,9 @@
     {#if isFailed}
       <div class="flex flex-col gap-2 border-t border-text-primary/20 px-5 py-3">
         {#if memo.error_message}
-          <p class="text-xs text-error/80 line-clamp-2" title={memo.error_message}>{memo.error_message}</p>
+          <p class="text-xs text-error/80 line-clamp-2" title={memo.error_message}>
+            {memo.error_message}
+          </p>
         {/if}
         <div class="flex gap-2">
           <button
@@ -289,7 +291,7 @@
         </span>
       </div>
     {:else}
-    <!-- Status badge for completed/failed memos -->
+      <!-- Status badge for completed/failed memos -->
       <div class="flex shrink-0 flex-col items-end gap-1">
         {#if isFailed && memo.error_message}
           <span class="text-xs text-error/70 line-clamp-1 max-w-[200px]" title={memo.error_message}
@@ -310,8 +312,9 @@
     {#if isFailed}
       <div class="flex shrink-0 items-center gap-2">
         {#if memo.error_message}
-          <span class="hidden text-xs text-error/70 line-clamp-1 max-w-[160px] sm:block" title={memo.error_message}
-            >{memo.error_message}</span
+          <span
+            class="hidden text-xs text-error/70 line-clamp-1 max-w-[160px] sm:block"
+            title={memo.error_message}>{memo.error_message}</span
           >
         {/if}
         <button
