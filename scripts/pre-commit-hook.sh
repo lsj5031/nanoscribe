@@ -32,9 +32,24 @@ else
   DC="docker compose run --rm -T funasr"
 fi
 
-$DC bash -c "cd /app/backend && ruff format --check . && ruff check ."
+# Run ruff format check first. If it fails, auto-format and re-stage.
+if ! $DC bash -c "cd /app/backend && ruff format --check ." 2>/dev/null; then
+  echo "  Formatting issues found — auto-fixing with ruff format..."
+  $DC bash -c "cd /app/backend && ruff format . && ruff check ."
+  # Re-stage only staged Python files that may have been modified
+  git diff --cached --name-only --diff-filter=ACM -- 'backend/**/*.py' 2>/dev/null | xargs -r git add
+else
+  $DC bash -c "cd /app/backend && ruff check ."
+fi
 
 echo "=== Pre-commit: frontend checks (Docker) ==="
-$DC bash -c "cd /app/frontend && pnpm format:check"
+
+# Run prettier check first. If it fails, auto-format and re-stage.
+if ! $DC bash -c "cd /app/frontend && pnpm format:check" 2>/dev/null; then
+  echo "  Formatting issues found — auto-fixing with prettier..."
+  $DC bash -c "cd /app/frontend && npx prettier --write ."
+  # Re-stage only staged frontend files that may have been modified
+  git diff --cached --name-only --diff-filter=ACM -- 'frontend/**' 2>/dev/null | xargs -r git add
+fi
 
 echo "=== Pre-commit checks passed ==="
