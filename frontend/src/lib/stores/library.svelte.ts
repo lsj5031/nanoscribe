@@ -15,6 +15,8 @@ export interface MemoCard {
   waveform_url: string | null;
   progress: number;
   stage: string | null;
+  error_code: string | null;
+  error_message: string | null;
 }
 
 export type ViewMode = 'grid' | 'list';
@@ -274,12 +276,20 @@ function connectJobSSE(memoId: string, jobId: string): void {
   const es = new EventSource(`/api/jobs/${jobId}/events`);
   sseConnections.set(memoId, es);
 
-  const updateMemo = (data: { status?: string; stage?: string; progress?: number }) => {
+  const updateMemo = (data: {
+    status?: string;
+    stage?: string;
+    progress?: number;
+    error_code?: string;
+    error_message?: string;
+  }) => {
     const memo = state.memos.find((m) => m.id === memoId);
     if (!memo) return;
     if (data.status) memo.status = data.status;
-    if (data.stage) memo.stage = data.stage;
+    if (data.stage != null) memo.stage = data.stage;
     if (data.progress != null) memo.progress = data.progress;
+    if (data.error_code != null) memo.error_code = data.error_code;
+    if (data.error_message != null) memo.error_message = data.error_message;
   };
 
   es.addEventListener('job.stage', (e: MessageEvent) => {
@@ -309,6 +319,13 @@ function connectJobSSE(memoId: string, jobId: string): void {
       if (memo) {
         memo.progress = data.status === 'completed' ? 1.0 : memo.progress;
         memo.stage = null;
+        if (data.status === 'failed') {
+          memo.error_code = data.error_code ?? memo.error_code;
+          memo.error_message = data.error_message ?? memo.error_message;
+        } else {
+          memo.error_code = null;
+          memo.error_message = null;
+        }
       }
     } catch {
       /* ignore */
@@ -396,6 +413,13 @@ function _tryReconnectLibrarySSE(memoId: string, jobId: string): void {
           memo.status = job.status;
           memo.progress = job.status === 'completed' ? 1.0 : memo.progress;
           memo.stage = null;
+          if (job.status === 'failed') {
+            memo.error_code = job.error_code ?? memo.error_code;
+            memo.error_message = job.error_message ?? memo.error_message;
+          } else {
+            memo.error_code = null;
+            memo.error_message = null;
+          }
         }
         return;
       }
@@ -430,7 +454,9 @@ export async function refreshMemo(memoId: string): Promise<void> {
         updated_at: detail.updated_at,
         waveform_url: state.memos[idx].waveform_url, // keep existing waveform URL
         progress: detail.latest_job?.progress ?? state.memos[idx].progress,
-        stage: detail.latest_job?.stage ?? state.memos[idx].stage
+        stage: detail.latest_job?.stage ?? state.memos[idx].stage,
+        error_code: detail.latest_job?.error_code ?? state.memos[idx].error_code,
+        error_message: detail.latest_job?.error_message ?? state.memos[idx].error_message
       };
     }
   } catch {

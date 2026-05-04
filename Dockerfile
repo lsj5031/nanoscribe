@@ -85,6 +85,7 @@ USER root
 RUN /app/venv/bin/pip install \
         funasr \
         modelscope \
+        transformers \
         tiktoken \
         addict>=2.4.0 \
         datasets>=4.0.0 \

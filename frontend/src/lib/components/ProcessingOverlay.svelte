@@ -116,6 +116,11 @@
               {active.detail}
             </p>
           {/if}
+          {#if active.status === 'failed' && active.error_message}
+            <p class="mt-1 max-w-[240px] text-center text-xs text-error/80">
+              {active.error_message}
+            </p>
+          {/if}
         </div>
       </div>
 

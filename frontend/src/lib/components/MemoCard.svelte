@@ -168,24 +168,29 @@
 
     <!-- Actions -->
     {#if isFailed}
-      <div class="flex gap-2 border-t border-text-primary/20 px-5 py-3">
-        <button
-          onclick={handleRetry}
-          disabled={retrying}
-          class="flex-1 rounded-none bg-transparent px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium text-text-primary duration-500 ease-luxury hover:text-accent disabled:opacity-50"
-          data-action="retry"
-          aria-label="Retry transcription"
-        >
-          {retrying ? 'Retrying…' : 'Retry'}
-        </button>
-        <button
-          onclick={handleDeleteClick}
-          class="rounded-none px-2 py-1 text-xs uppercase tracking-[0.2em] text-text-muted duration-500 ease-luxury hover:text-error"
-          data-action="delete"
-          aria-label="Delete memo"
-        >
-          Delete
-        </button>
+      <div class="flex flex-col gap-2 border-t border-text-primary/20 px-5 py-3">
+        {#if memo.error_message}
+          <p class="text-xs text-error/80 line-clamp-2" title={memo.error_message}>{memo.error_message}</p>
+        {/if}
+        <div class="flex gap-2">
+          <button
+            onclick={handleRetry}
+            disabled={retrying}
+            class="flex-1 rounded-none bg-transparent px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium text-text-primary duration-500 ease-luxury hover:text-accent disabled:opacity-50"
+            data-action="retry"
+            aria-label="Retry transcription"
+          >
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+          <button
+            onclick={handleDeleteClick}
+            class="rounded-none px-2 py-1 text-xs uppercase tracking-[0.2em] text-text-muted duration-500 ease-luxury hover:text-error"
+            data-action="delete"
+            aria-label="Delete memo"
+          >
+            Delete
+          </button>
+        </div>
       </div>
     {:else if memo.status === 'completed'}
       <div
@@ -284,27 +289,41 @@
         </span>
       </div>
     {:else}
-      <!-- Status badge for completed/failed memos -->
-      <span
-        class="shrink-0 rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
-          memo.status
-        )}"
-      >
-        {getStatusLabel(memo.status)}
-      </span>
+    <!-- Status badge for completed/failed memos -->
+      <div class="flex shrink-0 flex-col items-end gap-1">
+        {#if isFailed && memo.error_message}
+          <span class="text-xs text-error/70 line-clamp-1 max-w-[200px]" title={memo.error_message}
+            >{memo.error_message}</span
+          >
+        {/if}
+        <span
+          class="shrink-0 rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
+            memo.status
+          )}"
+        >
+          {getStatusLabel(memo.status)}
+        </span>
+      </div>
     {/if}
 
     <!-- Actions -->
     {#if isFailed}
-      <button
-        onclick={handleRetry}
-        disabled={retrying}
-        class="shrink-0 rounded-none bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.2em] font-medium text-text-primary duration-500 ease-luxury hover:text-accent disabled:opacity-50"
-        data-action="retry"
-        aria-label="Retry transcription"
-      >
-        {retrying ? 'Retrying…' : 'Retry'}
-      </button>
+      <div class="flex shrink-0 items-center gap-2">
+        {#if memo.error_message}
+          <span class="hidden text-xs text-error/70 line-clamp-1 max-w-[160px] sm:block" title={memo.error_message}
+            >{memo.error_message}</span
+          >
+        {/if}
+        <button
+          onclick={handleRetry}
+          disabled={retrying}
+          class="shrink-0 rounded-none bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.2em] font-medium text-text-primary duration-500 ease-luxury hover:text-accent disabled:opacity-50"
+          data-action="retry"
+          aria-label="Retry transcription"
+        >
+          {retrying ? 'Retrying…' : 'Retry'}
+        </button>
+      </div>
     {/if}
 
     <button

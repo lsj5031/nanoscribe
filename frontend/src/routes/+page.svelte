@@ -9,7 +9,7 @@
     type ModelReadiness
   } from '$lib/stores/readiness.svelte';
   import { isMediaRecorderSupported } from '$lib/stores/recording.svelte';
-  import { uploadFiles } from '$lib/stores/upload.svelte';
+  import { uploadFiles, getActiveUpload } from '$lib/stores/upload.svelte';
   import MemoCard from '$lib/components/MemoCard.svelte';
   import LibraryControls from '$lib/components/LibraryControls.svelte';
   import RecordingModal from '$lib/components/RecordingModal.svelte';
@@ -80,6 +80,19 @@
     sort;
     statusFilter;
     fetchMemos();
+  });
+
+  // Re-fetch library when upload/processing overlay dismisses
+  // (i.e., when active upload goes from non-null to null)
+  let wasUploading = $state(false);
+  $effect(() => {
+    const active = getActiveUpload();
+    if (active !== null) {
+      wasUploading = true;
+    } else if (wasUploading) {
+      wasUploading = false;
+      fetchMemos();
+    }
   });
 
   // Readiness polling: start when capabilities say not ready

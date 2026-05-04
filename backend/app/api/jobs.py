@@ -109,7 +109,11 @@ async def job_events(job_id: str, request: Request) -> StreamingResponse:
                     "failed": "job.failed",
                     "cancelled": "job.cancelled",
                 }[job["status"]]
-                yield f"event: {terminal_event}\ndata: {json.dumps({'status': job['status']})}\n\n"
+                terminal_data: dict = {"status": job["status"]}
+                if job["status"] == "failed":
+                    terminal_data["error_code"] = job.get("error_code")
+                    terminal_data["error_message"] = job.get("error_message")
+                yield f"event: {terminal_event}\ndata: {json.dumps(terminal_data)}\n\n"
                 return
 
             # Stream live events

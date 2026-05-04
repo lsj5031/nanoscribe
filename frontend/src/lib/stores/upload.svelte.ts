@@ -15,6 +15,8 @@ export interface UploadJob {
   progress: number;
   /** Sub-stage detail, e.g. "Chunk 3/12" during transcription */
   detail?: string;
+  /** Error message when job fails */
+  error_message?: string;
 }
 
 interface UploadState {
@@ -184,9 +186,11 @@ function connectSSE(jobId: string): void {
           ...state.active,
           status: data.status ?? 'completed',
           stage: data.stage ?? data.status ?? 'completed',
-          progress: data.progress ?? 1.0
+          progress: data.progress ?? 1.0,
+          error_message: data.status === 'failed' ? (data.error_message ?? state.active.error_message) : undefined
         };
-        // Auto-dismiss after a short delay
+        // Auto-dismiss after a short delay (longer for failed so user can read error)
+        const delay = data.status === 'failed' ? 4000 : 1500;
         setTimeout(() => {
           if (
             state.active?.jobId === jobId &&
@@ -194,9 +198,9 @@ function connectSSE(jobId: string): void {
               state.active.status === 'failed' ||
               state.active.status === 'cancelled')
           ) {
-            state.active = null;
+            dismissUpload();
           }
-        }, 1500);
+        }, delay);
       }
     } catch {
       // ignore parse errors
@@ -304,9 +308,11 @@ async function _finalPollJobStatus(jobId: string): Promise<void> {
           ...state.active,
           status: job.status,
           stage: job.status,
-          progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress)
+          progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress),
+          error_message: job.status === 'failed' ? (job.error_message ?? state.active.error_message) : undefined
         };
-        // Auto-dismiss
+        // Auto-dismiss (longer for failed)
+        const delay = job.status === 'failed' ? 4000 : 1500;
         setTimeout(() => {
           if (
             state.active?.jobId === jobId &&
@@ -314,9 +320,9 @@ async function _finalPollJobStatus(jobId: string): Promise<void> {
               state.active.status === 'failed' ||
               state.active.status === 'cancelled')
           ) {
-            state.active = null;
+            dismissUpload();
           }
-        }, 1500);
+        }, delay);
       } else {
         // Job still running but SSE is dead — show a warning
         // and let the user cancel/dismiss
