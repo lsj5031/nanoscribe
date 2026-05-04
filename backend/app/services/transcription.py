@@ -19,6 +19,17 @@ Pipeline:
   6. Persist raw ASR output as transcript.raw.json
   7. Persist editor-ready transcript as transcript.final.json
   8. Create segment rows in SQLite
+
+Chunk sizing:
+  max_chunk_ms defaults to 0 (auto).  The load() method detects GPU VRAM and
+  scales it: 120 s for ≥20 GiB, 60 s for ≥12 GiB, 30 s for ≥8 GiB, 15 s
+  otherwise.  Set NANOSCRIBE_VAD_MAX_CHUNK_MS to override.
+
+Model caching:
+  When keep_models_warm is enabled (auto-detected or forced via
+  NANOSCRIBE_KEEP_MODELS_WARM=1), VAD / ASR / Punc models are kept on GPU
+  between pipeline steps instead of being recreated each time.
+  Auto-detection enables warm caching on GPUs with ≥ 8 GiB VRAM.
 """
 
 from __future__ import annotations
@@ -47,11 +58,21 @@ PUNC_MODEL = _settings.punc_model
 # Sentence-ending punctuation for segment splitting
 _SENTENCE_END = frozenset("。！？.!?;")
 
-# VAD-chunked ASR parameters
-_MERGE_GAP_MS = 800  # merge VAD segments closer than this
-_MAX_CHUNK_MS = 30_000  # never merge beyond 30 s (fits easily in 8 GiB VRAM)
-_CHUNK_BUFFER_MS = 200  # pad each chunk by this much to avoid clipping
-_MIN_CHUNK_MS = 400  # skip chunks shorter than this (ASR unreliable)
+# ── VRAM-based auto chunk sizing ──────────────────────────────────────
+# Thresholds for auto-detection. Values are binary GiB (matching torch's
+# ``total_memory`` byte count, which we display as GiB in logs).
+_GIB = 1024**3
+_VRAM_AUTO_THRESHOLDS: list[tuple[int, int]] = [
+    (20 * _GIB, 120_000),  # ≥ 20 GiB → 120 s chunks
+    (12 * _GIB, 60_000),  # ≥ 12 GiB → 60 s chunks
+    (8 * _GIB, 30_000),  # ≥  8 GiB → 30 s chunks (default)
+]
+_VRAM_AUTO_FALLBACK_MS = 15_000  # CPU or < 8 GiB → 15 s chunks
+
+# Warm-model VRAM threshold: keep all models warm on GPU with ≥ this much VRAM.
+# Set conservatively to 12 GiB to leave headroom for inference activations
+# when VAD + ASR + Punc models are co-resident on GPU (≈ 4.5 GiB weights).
+_WARM_VRAM_THRESHOLD_BYTES = 12 * _GIB
 
 
 def _get_remote_code_path() -> str | None:
@@ -250,16 +271,12 @@ class RemoteTranscriptionService:
 
 
 class TranscriptionModels:
-    """FunASR model manager with ephemeral GPU inference.
+    """FunASR model manager with GPU inference and optional model caching.
 
-    Models are *not* kept in GPU memory between inference steps — they are
-    too large to coexist on an 8 GiB RTX 3070 (VAD+ASR+Punc ≈ 7.5 GiB).
-    Instead, each ``run_*`` method creates a fresh AutoModel on the GPU,
-    runs inference, then deletes it and clears VRAM before the next step.
-
-    This adds ~2-5 s overhead per step (loading from disk cache) but
-    guarantees that only one model occupies VRAM at a time, leaving room
-    for inference tensors.
+    Models can be *kept warm on GPU* between inference steps when VRAM
+    allows (auto-detected or forced via NANOSCRIBE_KEEP_MODELS_WARM).
+    When warm-caching is disabled (low VRAM or forced off), models are
+    created and destroyed per pipeline step as before.
 
     Thread-safety: ``_infer_lock`` serialises GPU inference so that two
     concurrent transcription jobs don't compete for VRAM.
@@ -272,6 +289,23 @@ class TranscriptionModels:
         self._load_lock = threading.Lock()
         self._infer_lock = threading.Lock()  # serialises GPU inference steps
 
+        # Cached model instances (only populated when _keep_warm is True)
+        self._vad_model: Any = None
+        self._asr_model: Any = None
+        self._punc_model: Any = None
+
+        # Resolved chunk parameters (set by load())
+        self._max_chunk_ms: int = 30_000
+        self._merge_gap_ms: int = 800
+        self._chunk_buffer_ms: int = 200
+        self._min_chunk_ms: int = 400
+
+        # Warm-caching flag (set by load())
+        self._keep_warm: bool = False
+        self._vram_bytes: int = 0
+
+    # ── Hardware detection ─────────────────────────────────────────────
+
     def _detect_device(self) -> str:
         """Detect best available device (cuda if available, else cpu)."""
         try:
@@ -283,13 +317,46 @@ class TranscriptionModels:
             pass
         return "cpu"
 
-    def load(self) -> None:
-        """Verify that models are available and detect the inference device.
+    def _detect_vram_bytes(self) -> int:
+        """Return total GPU memory in bytes, or 0 if not available."""
+        if not self._device.startswith("cuda"):
+            return 0
+        try:
+            import torch
 
-        Checks that each model directory exists in the ModelScope disk cache.
-        If a model isn't cached yet, creating the AutoModel during inference
-        will trigger the download automatically — so this method is a fast
-        best-effort check, not a blocking download.
+            return torch.cuda.get_device_properties(self._device).total_memory
+        except Exception:
+            return 0
+
+    def _auto_max_chunk_ms(self, vram_bytes: int) -> int:
+        """Select max chunk duration based on available VRAM."""
+        for threshold, chunk_ms in _VRAM_AUTO_THRESHOLDS:
+            if vram_bytes >= threshold:
+                return chunk_ms
+        return _VRAM_AUTO_FALLBACK_MS
+
+    def _resolve_keep_warm(self, vram_bytes: int) -> bool:
+        """Determine whether to keep models warm on GPU.
+
+        Priority:
+          1. NANOSCRIBE_KEEP_MODELS_WARM="1"  → always
+          2. NANOSCRIBE_KEEP_MODELS_WARM="0"  → never
+          3. (unset) → auto: True if VRAM ≥ 12 GB
+        """
+        explicit = _settings.keep_models_warm
+        if explicit == "1":
+            return True
+        if explicit == "0":
+            return False
+        # Auto-detect
+        return vram_bytes >= _WARM_VRAM_THRESHOLD_BYTES
+
+    # ── Model lifecycle ─────────────────────────────────────────────────
+
+    def load(self) -> None:
+        """Verify models, detect device/VRAM, and resolve chunk parameters.
+
+        Also pre-warms models on GPU if keep_models_warm is enabled.
 
         Thread-safe: uses a lock to prevent concurrent double-loading
         when the startup preload and a first transcription job race.
@@ -305,10 +372,30 @@ class TranscriptionModels:
 
             self._device = self._detect_device()
             self._remote_code = _get_remote_code_path()
+            self._vram_bytes = self._detect_vram_bytes()
 
+            # Resolve chunk parameters
+            settings = get_settings()
+            self._merge_gap_ms = settings.vad_merge_gap_ms
+            self._chunk_buffer_ms = settings.vad_chunk_buffer_ms
+            self._min_chunk_ms = settings.vad_min_chunk_ms
+
+            if settings.vad_max_chunk_ms > 0:
+                self._max_chunk_ms = settings.vad_max_chunk_ms
+            else:
+                self._max_chunk_ms = self._auto_max_chunk_ms(self._vram_bytes)
+
+            # Resolve warm-caching
+            self._keep_warm = self._resolve_keep_warm(self._vram_bytes)
+
+            vram_gib = f"{self._vram_bytes / (1024**3):.1f} GiB" if self._vram_bytes > 0 else "N/A"
             logger.info(
                 "checking_model_cache",
                 device=self._device,
+                vram=vram_gib,
+                max_chunk_ms=self._max_chunk_ms,
+                merge_gap_ms=self._merge_gap_ms,
+                keep_warm=self._keep_warm,
             )
 
             # Quick disk-cache check for each model.  Missing models will
@@ -331,8 +418,43 @@ class TranscriptionModels:
                     missing=missing,
                 )
 
+            # Pre-warm models if enabled (load them once now so first
+            # transcription doesn't pay the loading cost).
+            #
+            # We pre-warm *before* flipping ``_loaded`` so concurrent
+            # inference callers see ``_loaded is False`` and short-circuit
+            # rather than racing with ``_get_*_model()`` mid-creation.
+            # ``_load_lock`` (held above) prevents another ``load()`` from
+            # entering, and ``_infer_lock`` is therefore unnecessary here.
+            if self._keep_warm and self._device.startswith("cuda"):
+                t_warm = time.monotonic()
+                self._vad_model = self._create_vad_model()
+                logger.info("model_prewarmed", model="VAD")
+                self._asr_model = self._create_asr_model()
+                logger.info("model_prewarmed", model="ASR")
+                self._punc_model = self._create_punc_model()
+                logger.info("model_prewarmed", model="Punc")
+                logger.info(
+                    "models_prewarmed",
+                    elapsed_s=round(time.monotonic() - t_warm, 2),
+                    max_chunk_ms=self._max_chunk_ms,
+                )
+
             self._loaded = True
             logger.info("pipeline_ready", device=self._device)
+
+    def unload_models(self) -> None:
+        """Release all cached models from GPU memory."""
+        if self._vad_model is not None:
+            del self._vad_model
+            self._vad_model = None
+        if self._asr_model is not None:
+            del self._asr_model
+            self._asr_model = None
+        if self._punc_model is not None:
+            del self._punc_model
+            self._punc_model = None
+        self._clear_vram()
 
     @property
     def is_loaded(self) -> bool:
@@ -374,7 +496,7 @@ class TranscriptionModels:
     # -- Ephemeral model factories -------------------------------------------------
 
     def _create_vad_model(self) -> Any:
-        """Create an ephemeral VAD model on the inference device."""
+        """Create a VAD model on the inference device."""
         from funasr import AutoModel
 
         kwargs: dict[str, Any] = {
@@ -388,7 +510,7 @@ class TranscriptionModels:
         return AutoModel(**kwargs)
 
     def _create_asr_model(self) -> Any:
-        """Create an ephemeral ASR model on the inference device."""
+        """Create an ASR model on the inference device."""
         from funasr import AutoModel
 
         kwargs: dict[str, Any] = {
@@ -405,7 +527,7 @@ class TranscriptionModels:
         return AutoModel(**kwargs)
 
     def _create_punc_model(self) -> Any:
-        """Create an ephemeral Punc model on the inference device."""
+        """Create a Punc model on the inference device."""
         from funasr import AutoModel
 
         kwargs: dict[str, Any] = {
@@ -418,12 +540,57 @@ class TranscriptionModels:
             kwargs["check_latest"] = False
         return AutoModel(**kwargs)
 
+    # -- Model cache helpers -------------------------------------------------------
+
+    def _get_vad_model(self) -> Any:
+        """Return the VAD model, creating it if needed (respects _keep_warm)."""
+        if self._keep_warm and self._vad_model is not None:
+            return self._vad_model
+        model = self._create_vad_model()
+        if self._keep_warm:
+            self._vad_model = model
+        return model
+
+    def _get_asr_model(self) -> Any:
+        """Return the ASR model, creating it if needed (respects _keep_warm)."""
+        if self._keep_warm and self._asr_model is not None:
+            return self._asr_model
+        model = self._create_asr_model()
+        if self._keep_warm:
+            self._asr_model = model
+        return model
+
+    def _get_punc_model(self) -> Any:
+        """Return the Punc model, creating it if needed (respects _keep_warm)."""
+        if self._keep_warm and self._punc_model is not None:
+            return self._punc_model
+        model = self._create_punc_model()
+        if self._keep_warm:
+            self._punc_model = model
+        return model
+
+    def _maybe_drop_vad(self) -> None:
+        """Release the VAD model from GPU if warm-caching is disabled."""
+        if not self._keep_warm:
+            self._vad_model = None
+            self._clear_vram()
+
+    def _maybe_drop_asr(self) -> None:
+        """Release the ASR model from GPU if warm-caching is disabled."""
+        if not self._keep_warm:
+            self._asr_model = None
+            self._clear_vram()
+
+    def _maybe_drop_punc(self) -> None:
+        """Release the Punc model from GPU if warm-caching is disabled."""
+        if not self._keep_warm:
+            self._punc_model = None
+            self._clear_vram()
+
     # -- Inference methods ---------------------------------------------------------
 
     def run_vad(self, audio_path: str | Path) -> list[list[int]]:
         """Run VAD on an audio file and return speech segments.
-
-        Creates a VAD model on GPU, runs inference, then deletes it.
 
         Returns:
             List of [start_ms, end_ms] pairs for each speech segment.
@@ -435,7 +602,7 @@ class TranscriptionModels:
         t0 = time.monotonic()
 
         with self._infer_lock:
-            model = self._create_vad_model()
+            model = self._get_vad_model()
             try:
                 result = model.generate(input=str(audio_path))
                 if not result or not result[0].get("value"):
@@ -453,8 +620,7 @@ class TranscriptionModels:
                 logger.error("vad_failed", error=str(exc))
                 raise TranscriptionError(f"VAD processing failed: {exc}") from exc
             finally:
-                del model
-                self._clear_vram()
+                self._maybe_drop_vad()
 
     def run_asr_chunked(
         self,
@@ -471,11 +637,11 @@ class TranscriptionModels:
           2. Extracts each chunk as a temporary WAV file
           3. Creates the ASR model **once** and processes all chunks
           4. Adjusts timestamps to be relative to the full audio
-          5. Combines all results, then deletes the ASR model
+          5. Combines all results, then drops the ASR model (if not warm)
 
         The ASR model is kept in VRAM for the entire chunk-processing
-        phase (VAD is already done and deleted, so VRAM is free) and
-        only deleted after all chunks are processed.
+        phase.  When warm-caching is enabled it persists between pipeline
+        steps.
 
         Returns:
             List of result dicts with globally-adjusted timestamps.
@@ -483,11 +649,16 @@ class TranscriptionModels:
         if not vad_segments:
             return []
 
-        merged = _merge_vad_segments(vad_segments)
+        merged = _merge_vad_segments(
+            vad_segments,
+            gap_threshold_ms=self._merge_gap_ms,
+            max_duration_ms=self._max_chunk_ms,
+        )
         logger.info(
             "chunked_asr_start",
             raw_segments=len(vad_segments),
             merged_segments=len(merged),
+            max_chunk_ms=self._max_chunk_ms,
             device=self._device,
         )
 
@@ -496,13 +667,19 @@ class TranscriptionModels:
 
         with self._infer_lock:
             t_model_load = time.monotonic()
-            model = self._create_asr_model()
+            model = self._get_asr_model()
             logger.info("asr_model_loaded", load_s=round(time.monotonic() - t_model_load, 2))
             try:
                 for i, (start_ms, end_ms) in enumerate(merged):
                     # Extract chunk as temporary WAV (with padding)
                     t_chunk_start = time.monotonic()
-                    chunk_info = _extract_chunk(audio_path, start_ms, end_ms)
+                    chunk_info = _extract_chunk(
+                        audio_path,
+                        start_ms,
+                        end_ms,
+                        buffer_ms=self._chunk_buffer_ms,
+                        min_chunk_ms=self._min_chunk_ms,
+                    )
                     if chunk_info is None:
                         logger.warning(
                             "chunk_skipped_too_short",
@@ -582,8 +759,7 @@ class TranscriptionModels:
                         except Exception:
                             pass  # Don't let callback errors break transcription
             finally:
-                del model
-                self._clear_vram()
+                self._maybe_drop_asr()
 
         total_elapsed = time.monotonic() - t_chunk_total
         logger.info(
@@ -598,8 +774,6 @@ class TranscriptionModels:
     def run_punc(self, text: str) -> str:
         """Run punctuation restoration on text.
 
-        Creates a Punc model on GPU, runs inference, then deletes it.
-
         Returns:
             Text with restored punctuation.
         """
@@ -610,7 +784,7 @@ class TranscriptionModels:
         t0 = time.monotonic()
 
         with self._infer_lock:
-            model = self._create_punc_model()
+            model = self._get_punc_model()
             try:
                 result = model.generate(input=text)
                 if result and result[0].get("text"):
@@ -623,8 +797,7 @@ class TranscriptionModels:
                 logger.warning("punc_failed", error=str(exc))
                 return text
             finally:
-                del model
-                self._clear_vram()
+                self._maybe_drop_punc()
 
     def transcribe(
         self,
@@ -724,8 +897,8 @@ class TranscriptionModels:
 
 def _merge_vad_segments(
     vad_segments: list[list[int]],
-    gap_threshold_ms: int = _MERGE_GAP_MS,
-    max_duration_ms: int = _MAX_CHUNK_MS,
+    gap_threshold_ms: int = 800,
+    max_duration_ms: int = 30_000,
 ) -> list[list[int]]:
     """Merge adjacent VAD segments that are close together.
 
@@ -756,10 +929,12 @@ def _extract_chunk(
     audio_path: str | Path,
     start_ms: int,
     end_ms: int,
+    buffer_ms: int = 200,
+    min_chunk_ms: int = 400,
 ) -> tuple[Path, int] | None:
     """Extract a chunk of audio as a temporary WAV file using ffmpeg.
 
-    Pads the chunk by _CHUNK_BUFFER_MS on each side to avoid clipping
+    Pads the chunk by *buffer_ms* on each side to avoid clipping
     words at segment boundaries.  Returns ``(chunk_path, padded_start_ms)``
     or None if the chunk is too short.
 
@@ -773,11 +948,11 @@ def _extract_chunk(
     audio_path = Path(audio_path)
 
     # Apply buffer padding
-    padded_start = max(0, start_ms - _CHUNK_BUFFER_MS)
-    padded_end = end_ms + _CHUNK_BUFFER_MS
+    padded_start = max(0, start_ms - buffer_ms)
+    padded_end = end_ms + buffer_ms
     chunk_duration_ms = padded_end - padded_start
 
-    if chunk_duration_ms < _MIN_CHUNK_MS:
+    if chunk_duration_ms < min_chunk_ms:
         return None
 
     tmp = tempfile.NamedTemporaryFile(
@@ -1090,8 +1265,11 @@ def reset_models() -> None:
 
     Called after engine settings are changed via the API so that the
     next transcription job picks up the new engine without restart.
+    Also unloads any warm-cached models from GPU memory.
     """
     global _models
+    if _models is not None and isinstance(_models, TranscriptionModels):
+        _models.unload_models()
     _models = None
     logger.info("transcription_models_reset")
 

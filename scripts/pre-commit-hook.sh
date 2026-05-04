@@ -32,24 +32,49 @@ else
   DC="docker compose run --rm -T funasr"
 fi
 
-# Run ruff format check first. If it fails, auto-format and re-stage.
-if ! $DC bash -c "cd /app/backend && ruff format --check ." 2>/dev/null; then
+AUTOFIXED=0
+
+# Run ruff format check. Exit codes: 0=ok, 1=would-reformat, >=2=error.
+set +e
+$DC bash -c "cd /app/backend && ruff format --check ."
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+  $DC bash -c "cd /app/backend && ruff check ."
+elif [ "$rc" -eq 1 ]; then
   echo "  Formatting issues found — auto-fixing with ruff format..."
   $DC bash -c "cd /app/backend && ruff format . && ruff check ."
   # Re-stage only staged Python files that may have been modified
-  git diff --cached --name-only --diff-filter=ACM -- 'backend/**/*.py' 2>/dev/null | xargs -r git add
+  git diff --cached --name-only --diff-filter=ACM -- 'backend/*.py' ':(glob)backend/**/*.py' | xargs -r git add
+  AUTOFIXED=1
 else
-  $DC bash -c "cd /app/backend && ruff check ."
+  echo "ERROR: ruff format --check failed (exit $rc); aborting." >&2
+  exit "$rc"
 fi
 
 echo "=== Pre-commit: frontend checks (Docker) ==="
 
-# Run prettier check first. If it fails, auto-format and re-stage.
-if ! $DC bash -c "cd /app/frontend && pnpm format:check" 2>/dev/null; then
+# Run prettier check. Exit codes: 0=ok, 1=needs-format, >=2=error.
+set +e
+$DC bash -c "cd /app/frontend && pnpm format:check"
+rc=$?
+set -e
+if [ "$rc" -eq 1 ]; then
   echo "  Formatting issues found — auto-fixing with prettier..."
   $DC bash -c "cd /app/frontend && npx prettier --write ."
   # Re-stage only staged frontend files that may have been modified
-  git diff --cached --name-only --diff-filter=ACM -- 'frontend/**' 2>/dev/null | xargs -r git add
+  git diff --cached --name-only --diff-filter=ACM -- 'frontend/*' ':(glob)frontend/**' | xargs -r git add
+  AUTOFIXED=1
+elif [ "$rc" -ne 0 ]; then
+  echo "ERROR: pnpm format:check failed (exit $rc); aborting." >&2
+  exit "$rc"
+fi
+
+if [ "$AUTOFIXED" -eq 1 ]; then
+  echo ""
+  echo "Pre-commit auto-formatted staged files and re-staged them."
+  echo "Review the changes (git diff --cached) and re-run your commit."
+  exit 1
 fi
 
 echo "=== Pre-commit checks passed ==="

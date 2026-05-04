@@ -35,6 +35,16 @@ class Settings:
     remote_asr_url: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_URL", ""))
     remote_asr_api_key: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_API_KEY", ""))
     remote_asr_model: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_REMOTE_ASR_MODEL", "whisper-1"))
+    # ── VAD / chunking parameters for local ASR ───────────────────────
+    # 0 = auto-detect based on GPU VRAM
+    vad_max_chunk_ms: int = field(default_factory=lambda: int(os.environ.get("NANOSCRIBE_VAD_MAX_CHUNK_MS", "0")))
+    vad_merge_gap_ms: int = field(default_factory=lambda: int(os.environ.get("NANOSCRIBE_VAD_MERGE_GAP_MS", "800")))
+    vad_chunk_buffer_ms: int = field(
+        default_factory=lambda: int(os.environ.get("NANOSCRIBE_VAD_CHUNK_BUFFER_MS", "200"))
+    )
+    vad_min_chunk_ms: int = field(default_factory=lambda: int(os.environ.get("NANOSCRIBE_VAD_MIN_CHUNK_MS", "400")))
+    # "" = auto-detect, "1" = always, "0" = never
+    keep_models_warm: str = field(default_factory=lambda: os.environ.get("NANOSCRIBE_KEEP_MODELS_WARM", ""))
     remote_asr_timeout: int = field(default_factory=lambda: int(os.environ.get("NANOSCRIBE_REMOTE_ASR_TIMEOUT", "900")))
 
     @property
