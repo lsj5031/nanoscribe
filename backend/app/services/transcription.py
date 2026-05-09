@@ -65,14 +65,14 @@ _GIB = 1024**3
 _VRAM_AUTO_THRESHOLDS: list[tuple[int, int]] = [
     (20 * _GIB, 120_000),  # ≥ 20 GiB → 120 s chunks
     (12 * _GIB, 60_000),  # ≥ 12 GiB → 60 s chunks
-    (8 * _GIB, 30_000),  # ≥  8 GiB → 30 s chunks (default)
+    (int(7.5 * _GIB), 30_000),  # ≥ 7.5 GiB → 30 s chunks
 ]
-_VRAM_AUTO_FALLBACK_MS = 15_000  # CPU or < 8 GiB → 15 s chunks
+_VRAM_AUTO_FALLBACK_MS = 15_000  # CPU or < 7.5 GiB → 15 s chunks
 
 # Warm-model VRAM threshold: keep all models warm on GPU with ≥ this much VRAM.
-# Set conservatively to 12 GiB to leave headroom for inference activations
-# when VAD + ASR + Punc models are co-resident on GPU (≈ 4.5 GiB weights).
-_WARM_VRAM_THRESHOLD_BYTES = 12 * _GIB
+# Models use ~3.2 GiB combined; leave headroom for inference activations.
+# 5 GiB threshold means any GPU with ≥ 6 GiB can warm-cache safely.
+_WARM_VRAM_THRESHOLD_BYTES = 5 * _GIB
 
 
 def _get_remote_code_path() -> str | None:
