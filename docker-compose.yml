@@ -42,3 +42,46 @@ services:
       - --port
       - "8000"
       - --reload
+
+  # ── Telegram Bot ─────────────────────────────────────────────────
+  bot:
+    build:
+      context: ./bot
+    container_name: nanoscribe-bot
+    restart: unless-stopped
+    env_file:
+      - ./bot/.env
+    volumes:
+      - ./bot/bot.py:/app/bot.py:ro
+      - telegram-api-data:/var/lib/telegram-bot-api:ro
+    tmpfs:
+      - /tmp:size=2G
+    depends_on:
+      - funasr
+    networks:
+      - default
+
+  # ── Telegram Local API Server (optional, for files >20MB) ───────
+  telegram-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram-api
+    restart: unless-stopped
+    profiles:
+      - telegram-api      # Only started when explicitly requested
+    env_file:
+      - ./bot/.env
+    environment:
+      - TELEGRAM_LOCAL=true
+    volumes:
+      - telegram-api-data:/var/lib/telegram-bot-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qS -O /dev/null http://127.0.0.1:8081 2>&1 | grep -q 'HTTP/'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - default
+
+volumes:
+  telegram-api-data:

@@ -1,4 +1,4 @@
-.PHONY: build build-dev build-prod shell run smoke dev frontend-build check backend-check backend-test frontend-check test hooks-install clean help
+.PHONY: build build-dev build-prod shell run smoke dev frontend-build check backend-check backend-test frontend-check test hooks-install clean help bot-build bot-up bot-logs bot-shell bot-up-full dev-all
 
 .DEFAULT_GOAL := help
 
@@ -15,6 +15,7 @@ help: ## Show this help
 	@echo "  build-dev       Build the dev image (with Node.js, pnpm, dev tools)"
 	@echo "  build-prod      Build the production image (with built SPA)"
 	@echo "  dev             Start dev environment with hot reload (builds frontend on first run)"
+	@echo "  dev-all         Start everything (NanoScribe + bot)"
 	@echo "  frontend-build  Build the frontend SPA inside the container"
 	@echo "  shell           Open an interactive shell with GPU and caches mounted"
 	@echo "  run             Run a one-shot readiness check"
@@ -26,6 +27,12 @@ help: ## Show this help
 	@echo "  test            Run all tests (currently backend pytest)"
 	@echo "  hooks-install   Install pre-commit hooks"
 	@echo "  clean           Remove the built image"
+	@echo ""
+	@echo "  bot-build       Build the Telegram bot image"
+	@echo "  bot-up          Start the Telegram bot"
+	@echo "  bot-logs        Tail Telegram bot container logs"
+	@echo "  bot-shell       Open a shell in the bot container"
+	@echo "  bot-up-full     Start bot with local Telegram API server (>20 MB files)"
 
 build: build-dev
 
@@ -102,3 +109,25 @@ clean:
 	docker compose down || true
 	docker rmi $(IMAGE) || true
 	docker rmi $(IMAGE)-prod || true
+
+# ── Bot ────────────────────────────────────────────────────────────
+
+bot-build:
+	docker compose build bot
+
+bot-up:
+	docker compose up -d bot
+
+bot-logs:
+	docker compose logs -f bot
+
+bot-shell:
+	docker compose exec bot /bin/sh
+
+# Start with local API server for large files
+bot-up-full:
+	docker compose --profile telegram-api up -d bot telegram-api
+
+# Start everything (NanoScribe + bot)
+dev-all:
+	docker compose up -d

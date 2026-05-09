@@ -18,6 +18,7 @@ A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voic
 - **OpenAI-Compatible Endpoint** — Drop-in `/v1/audio/transcriptions` for programmatic access
 - **Offline Mode** — Works without internet once models are cached
 - **PWA Installable** — Install as a desktop app with keyboard shortcuts
+- **Telegram Bot** — Transcribe voice messages and audio files via Telegram
 
 ## Screenshots
 
@@ -106,6 +107,7 @@ docker pull ghcr.io/lsj5031/nanoscribe:v0.1.0
 | `make build-prod` | Build the production image (with built SPA) |
 | `make frontend-build` | Build the frontend SPA inside the container |
 | `make dev` | Start dev environment with hot reload |
+| `make dev-all` | Start everything (NanoScribe + bot) |
 | `make shell` | Open an interactive shell in the container |
 | `make check` | Run all quality checks (lint, format, typecheck, tests) |
 | `make backend-check` | Run backend checks (ruff format, ruff check, ty check) |
@@ -115,6 +117,11 @@ docker pull ghcr.io/lsj5031/nanoscribe:v0.1.0
 | `make hooks-install` | Install pre-commit hooks |
 | `make smoke` | Verify FunASR and ModelScope imports |
 | `make clean` | Remove built images and stop containers |
+| `make bot-build` | Build the Telegram bot Docker image |
+| `make bot-up` | Start the Telegram bot |
+| `make bot-logs` | Tail Telegram bot container logs |
+| `make bot-shell` | Open a shell in the bot container |
+| `make bot-up-full` | Start bot with local Telegram API server (>20 MB files) |
 
 ## Environment Variables
 
@@ -152,6 +159,12 @@ This prevents FunASR from checking for model updates and 3D-Speaker from attempt
 ## Project Structure
 
 ```
+bot/                    # Telegram bot
+  bot.py                # Main bot logic (aiogram)
+  requirements.txt      # Python dependencies
+  Dockerfile            # Bot container build
+  .env.example          # Bot env template
+
 frontend/               # SvelteKit SPA
   src/
     lib/
@@ -236,6 +249,58 @@ Models are stored in `data/.modelscope_cache/` and loaded ephemerally onto the G
 | `/api/search` | GET | Search memos and transcripts |
 | `/v1/audio/transcriptions` | POST | OpenAI-compatible transcription |
 | `/v1/models` | GET | OpenAI-compatible model list |
+
+## Telegram Bot
+
+The bot transcribes voice messages and audio files via Telegram using NanoScribe's
+FunASR pipeline as the backend.
+
+### Setup
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) on Telegram and get a token
+2. Copy `bot/.env.example` to `bot/.env` and fill in:
+   - `TELEGRAM_TOKEN` — your bot token
+   - `ALLOWED_UIDS` — comma-separated Telegram user IDs allowed to use the bot
+3. Start the bot alongside NanoScribe:
+   ```bash
+   make dev-all
+   ```
+
+Or start the bot separately:
+   ```bash
+   make bot-up
+   make bot-logs  # watch logs
+   ```
+
+### For Large Files (>20 MB)
+
+Telegram's public API limits uploaded file downloads to 20 MB.  For larger files,
+start a [local Telegram Bot API server](https://github.com/aiogram/telegram-bot-api):
+
+```bash
+# Get API credentials at https://my.telegram.org
+# Add TELEGRAM_API_ID and TELEGRAM_API_HASH to bot/.env
+make bot-up-full
+```
+
+### Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/help` | Usage instructions and supported formats |
+
+### Supported Audio Formats
+
+`wav`, `mp3`, `m4a`, `aac`, `webm`, `ogg`, `opus`, `mp4`, `mpeg`, `mpga`, `flac`
+
+### How It Works
+
+- **Short audio (≤ 60s):** Sent as a single request to NanoScribe's `/v1/audio/transcriptions` endpoint
+- **Long audio (> 60s):** Split into ~60s chunks with 2s overlap, transcribed sequentially with progressive Telegram message updates
+- No authentication required between bot and NanoScribe (trusted internal Docker network)
+- Bot transcriptions are ephemeral — they do not create memos in NanoScribe's library
+
 
 ## Development
 
