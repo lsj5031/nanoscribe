@@ -139,6 +139,11 @@ Defaults come from `backend/app/core/config.py`. The `docker-compose.yml` may ov
 | `NANOSCRIBE_REMOTE_ASR_API_KEY` | _(empty)_ | API key for the remote ASR provider |
 | `NANOSCRIBE_REMOTE_ASR_MODEL` | `whisper-1` | Model ID for the remote ASR provider |
 | `NANOSCRIBE_REMOTE_ASR_TIMEOUT` | `900` | Remote ASR request timeout in seconds |
+| `NANOSCRIBE_KEEP_MODELS_WARM` | _(empty)_ | Keep models on GPU: `1`=always, `0`=never, empty=auto |
+| `NANOSCRIBE_VAD_MAX_CHUNK_MS` | `0` | Max VAD chunk size in ms (`0` = auto-detect from VRAM) |
+| `NANOSCRIBE_VAD_MERGE_GAP_MS` | `800` | Gap (ms) between VAD segments to merge |
+| `NANOSCRIBE_VAD_CHUNK_BUFFER_MS` | `200` | Buffer (ms) added to each VAD chunk boundary |
+| `NANOSCRIBE_VAD_MIN_CHUNK_MS` | `400` | Minimum VAD chunk duration in ms |
 | `HF_HUB_OFFLINE` | `0` | Set to `1` to prevent HuggingFace downloads |
 | `MODELSCOPE_CACHE` | `/app/data/.modelscope_cache` | ModelScope model cache directory |
 | `PYTORCH_CUDA_ALLOC_CONF` | `expandable_segments:True` | CUDA memory allocator config |
@@ -154,7 +159,7 @@ environment:
   - NANOSCRIBE_OFFLINE=1
 ```
 
-This prevents FunASR from checking for model updates and 3D-Speaker from attempting downloads. Fresh deployments should keep these at `0` until models are cached.
+This prevents FunASR from checking for model updates and 3D-Speaker from attempting downloads. The default dev `docker-compose.yml` sets these to `0` so models download on first run. Fresh deployments should keep these at `0` until models are cached.
 
 ## Project Structure
 
@@ -173,6 +178,7 @@ frontend/               # SvelteKit SPA
     routes/             # SvelteKit routes
   package.json
   pnpm-lock.yaml
+  pnpm-workspace.yaml  # pnpm build-script approvals
 
 backend/                # FastAPI backend
   app/
@@ -335,7 +341,10 @@ pnpm build             # Production build
 ### Testing
 
 ```bash
-# Full backend test suite (preferred entry point)
+# Full local verification suite (Docker-backed)
+make check
+
+# Backend test suite only
 make backend-test
 
 # Or run pytest directly inside the container for fine-grained control
@@ -343,8 +352,21 @@ docker compose exec funasr bash -c "cd /app/backend && pytest -v"
 docker compose exec funasr bash -c "cd /app/backend && pytest tests/test_transcription.py -v"
 ```
 
-`make check` runs lint + type checks + the full pytest suite, mirroring the
-[CI workflow](.github/workflows/check.yml).
+Note: The CI workflow skips GPU-dependent tests (`test_transcription.py` and
+`test_diarization.py`) since GitHub runners lack NVIDIA GPUs. These tests can
+only be run locally with `make backend-test`.
+
+The [CI workflow](.github/workflows/check.yml) runs the same backend and
+frontend check types as `make check`, but installs dependencies natively on the
+GitHub runner. To reproduce the frontend CI install path exactly:
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm svelte-kit sync
+pnpm check
+pnpm format:check
+```
 
 ## Specification
 

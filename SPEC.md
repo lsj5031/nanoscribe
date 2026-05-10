@@ -33,7 +33,6 @@ The product goal is simple: drop or record audio, watch progress in real time, o
 - Real-time job progress via SSE.
 - Timestamped transcript output.
 - Speaker diarization when supported by the active FunASR configuration.
-- Partial transcript streaming when supported by the active FunASR configuration.
 - Manual transcript editing with autosave.
 - Clickable timestamps and synchronized audio playback.
 
@@ -111,7 +110,9 @@ NanoScribe should lean on FunASR for:
 - Punctuation restoration.
 - Hotword-aware recognition.
 - Speaker diarization when supported by the chosen model path.
-- Streaming or low-latency output when supported by the chosen mode.
+
+(App responsibilities also include job queueing, progress reporting, and the
+OpenAI-compatible `/v1/audio/transcriptions` endpoint.)
 
 ### 5.1.1 Recommended Packaged Preset
 
@@ -227,18 +228,16 @@ The current repo is only the Docker foundation. The implementation target struct
 /
   frontend/
     src/
-    static/
     package.json
     svelte.config.js
     vite.config.ts
-    tailwind.config.ts
+    pnpm-workspace.yaml
   backend/
     app/
       api/
       core/
       db/
       services/
-      workers/
       schemas/
       main.py
     pyproject.toml
@@ -263,7 +262,6 @@ All persistent data lives under the mounted data directory.
       waveform.json
       transcript.raw.json
       transcript.final.json
-      diarization.json
       exports/
         transcript.txt
         transcript.json
@@ -280,61 +278,61 @@ All persistent data lives under the mounted data directory.
 
 ### 11.1 `memos`
 
-- `id`
-- `title`
-- `source_kind`
-- `source_filename`
-- `duration_ms`
-- `language_detected`
-- `language_override`
-- `status`
-- `speaker_count`
-- `transcript_revision`
-- `created_at`
-- `updated_at`
-- `last_opened_at`
-- `last_edited_at`
+- `id` (TEXT, PK)
+- `title` (TEXT)
+- `source_kind` (TEXT)
+- `source_filename` (TEXT)
+- `duration_ms` (REAL)
+- `language_detected` (TEXT)
+- `language_override` (TEXT)
+- `status` (TEXT)
+- `speaker_count` (INTEGER)
+- `transcript_revision` (INTEGER, DEFAULT 0)
+- `created_at` (TEXT)
+- `updated_at` (TEXT)
+- `last_opened_at` (TEXT)
+- `last_edited_at` (TEXT)
 
 ### 11.2 `jobs`
 
-- `id`
-- `memo_id`
-- `job_type`
-- `status`
-- `stage`
-- `progress`
-- `eta_seconds`
-- `device_used`
-- `error_code`
-- `error_message`
-- `attempt_count`
-- `created_at`
-- `started_at`
-- `finished_at`
+- `id` (TEXT, PK)
+- `memo_id` (TEXT, FK)
+- `job_type` (TEXT)
+- `status` (TEXT)
+- `stage` (TEXT)
+- `progress` (REAL)
+- `eta_seconds` (INTEGER)
+- `device_used` (TEXT)
+- `error_code` (TEXT)
+- `error_message` (TEXT)
+- `attempt_count` (INTEGER)
+- `created_at` (TEXT)
+- `started_at` (TEXT)
+- `finished_at` (TEXT)
 
 ### 11.3 `segments`
 
-- `id`
-- `memo_id`
-- `ordinal`
-- `start_ms`
-- `end_ms`
-- `text`
-- `speaker_key`
-- `confidence`
-- `edited`
-- `created_at`
-- `updated_at`
+- `id` (INTEGER, PK)
+- `memo_id` (TEXT, FK)
+- `ordinal` (INTEGER)
+- `start_ms` (INTEGER)
+- `end_ms` (INTEGER)
+- `text` (TEXT)
+- `speaker_key` (TEXT)
+- `confidence` (REAL)
+- `edited` (INTEGER, DEFAULT 0)
+- `created_at` (TEXT)
+- `updated_at` (TEXT)
 
 ### 11.4 `memo_speakers`
 
-- `id`
-- `memo_id`
-- `speaker_key`
-- `display_name`
-- `color`
-- `created_at`
-- `updated_at`
+- `id` (INTEGER, PK)
+- `memo_id` (TEXT, FK)
+- `speaker_key` (TEXT)
+- `display_name` (TEXT)
+- `color` (TEXT)
+- `created_at` (TEXT)
+- `updated_at` (TEXT)
 
 ## 12. Capability Manifest
 
@@ -347,7 +345,6 @@ The backend must expose at least:
 - `vad`
 - `timestamps`
 - `speaker_diarization`
-- `streaming_partial_transcript`
 - `hotwords`
 - `language_auto_detect`
 - `recording`
@@ -358,7 +355,7 @@ The frontend uses this manifest to drive the supported UI surface for the active
 
 ### 13.1 Intake
 
-Supported inputs:
+Supported inputs (web UI and memo upload):
 
 - `wav`
 - `mp3`
@@ -367,6 +364,9 @@ Supported inputs:
 - `webm`
 - `ogg`
 - `opus`
+
+The OpenAI-compatible `/v1/audio/transcriptions` endpoint additionally
+supports `mp4`, `mpeg`, and `mpga` (outside the standard memo intake pipeline).
 
 Flow:
 
@@ -509,6 +509,10 @@ Creates a new transcription job using current settings.
 
 Creates a diarization-only job when supported.
 
+#### `GET /api/memos/{memo_id}/jobs`
+
+Returns all jobs for a memo.
+
 #### `GET /api/jobs/{job_id}`
 
 Returns current job snapshot.
@@ -548,7 +552,8 @@ Searches memo titles and transcript text.
 
 #### `GET /api/memos/{memo_id}/export?format=txt|json|srt`
 
-Returns or generates the requested export.
+Returns or generates the requested export. The OpenAI-compatible
+`/v1/audio/transcriptions` endpoint also supports `vtt` format.
 
 ## 16. Frontend Information Architecture
 
@@ -687,7 +692,6 @@ Returns or generates the requested export.
 
 - `Space` play or pause.
 - `Cmd/Ctrl+K` global search.
-- `Cmd/Ctrl+F` search inside current transcript.
 - `Left` and `Right` seek 5 seconds.
 - `Shift+Left` and `Shift+Right` seek 15 seconds.
 - `Up` and `Down` move selected segment.
@@ -699,14 +703,14 @@ Returns or generates the requested export.
 ### 22.1 Visual Direction
 
 - Dark mode default.
-- Strong teal primary accent `#00d4ff`.
+- Gold primary accent `#D4AF37`.
 - Speaker colors generated as soft, readable pastels.
 - Glass and blur used sparingly.
 - Dense, crisp editor layout.
 
 ### 22.2 Typography
 
-- Preferred font: Satoshi or Inter.
+- Preferred fonts: Inter (sans-serif) for body text, Playfair Display (serif) for headings.
 - Transcript text must prioritize readability over branding flair.
 
 ### 22.3 Motion
@@ -730,12 +734,17 @@ Returns or generates the requested export.
 
 ### 24.1 Stores
 
-- `capabilitiesStore`
-- `libraryStore`
-- `jobStore`
-- `recordingStore`
-- `editorStore`
-- `settingsStore`
+- `apiStore` (request helpers)
+- `capabilitiesStore` (runtime feature manifest)
+- `editorStore` (transcript editing state)
+- `libraryStore` (memo list and metadata)
+- `readinessStore` (model download/warmup status)
+- `recordingStore` (microphone recording)
+- `searchStore` (global search state)
+- `settingsStore` (user preferences)
+- `system-statusStore` (backend health monitoring)
+- `toastsStore` (notification queue)
+- `uploadStore` (drag-and-drop and upload state)
 
 ### 24.2 Persistence
 
@@ -745,14 +754,21 @@ Returns or generates the requested export.
 
 ## 25. Backend Services
 
-- Intake service.
 - Audio normalization service.
-- Waveform extraction service.
-- FunASR transcription service.
+- Capabilities service.
 - Diarization merge service.
-- Transcript persistence service.
-- Search service.
+- Diarization service.
 - Export service.
+- Intake / upload service.
+- Job worker service.
+- Library service.
+- Search service (SQLite FTS).
+- Speaker label service.
+- SSE event streaming service.
+- Status service.
+- Transcript persistence service (segments).
+- Transcription service.
+- Waveform extraction service.
 
 Services should stay small and direct. No speculative abstraction layers are required.
 
@@ -789,7 +805,6 @@ Services should stay small and direct. No speculative abstraction layers are req
 - The app clearly identifies whether the local machine matches the supported runtime profile.
 - Batch upload creates separate memos and jobs with independent progress.
 - SSE streams expose real-time job progress and stage updates.
-- Partial transcript updates are shown when the active mode supports them.
 - Completed transcripts include timestamps.
 - Diarization is shown when supported and explained when unavailable.
 - The transcript editor supports autosave, click-to-seek, speaker rename, and transcript search.
@@ -873,6 +888,7 @@ Preferred root commands:
 
 `make check` should run at least:
 
+- `ruff format --check`
 - `ruff check`
 - `ty check`
 - `pnpm check`
@@ -888,7 +904,9 @@ All of these commands should execute inside Docker so a developer does not need 
 - Bind mounts should provide live code editing from the host while execution stays inside the container.
 - The repo should provide documented commands for starting the app, running checks, and opening a shell in the dev container.
 - In development, the backend should run with reload enabled inside the container.
-- In development, the frontend should run its dev server and HMR inside the container.
+- The frontend is built as a static SPA and served by FastAPI during development.
+  A separate frontend dev server with HMR can be started manually from the container
+  shell (`cd /app/frontend && pnpm dev`) when needed.
 - In production, the built SvelteKit SPA should be served by FastAPI from the same image.
 
 Preferred root commands:
