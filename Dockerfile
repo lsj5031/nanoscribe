@@ -153,7 +153,7 @@ FROM node:22-bookworm-slim AS frontend-build
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY frontend/ ./
@@ -187,6 +187,6 @@ ENV PATH="/app/venv/bin:${PATH}" \
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+    CMD curl -fsS http://localhost:8000/api/system/health || exit 1
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

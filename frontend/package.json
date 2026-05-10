@@ -28,10 +28,5 @@
   },
   "dependencies": {
     "wavesurfer.js": "^7.12.6"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

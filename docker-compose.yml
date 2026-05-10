@@ -18,10 +18,10 @@ services:
       - ./backend:/app/backend
       - ./frontend:/app/frontend
     environment:
-      - HF_HUB_OFFLINE=1
+      - HF_HUB_OFFLINE=0
       - MODELSCOPE_CACHE=/app/data/.modelscope_cache
       - NANOSCRIBE_DATA_DIR=/app/data
-      - NANOSCRIBE_OFFLINE=1
+      - NANOSCRIBE_OFFLINE=0
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - NANOSCRIBE_STATIC_DIR=/app/frontend/build
     deploy:
@@ -53,7 +53,6 @@ services:
       - ./bot/.env
     volumes:
       - ./bot/bot.py:/app/bot.py:ro
-      - telegram-api-data:/var/lib/telegram-bot-api:ro
     tmpfs:
       - /tmp:size=2G
     depends_on:

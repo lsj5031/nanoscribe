@@ -34,9 +34,13 @@ frontend/.vite/
 
 # ── Test / CI artifacts ────────────────────────
 test-results/
+.playwright_temp/
 
 # ── Screenshots & misc ─────────────────────────
 screenshot.png
+
+# ── Lint/formatter cache ───────────────────────
+.ruff_cache/
 
 # ── OS/editor junk ─────────────────────────────
 .DS_Store
