@@ -31,8 +31,9 @@ from app.schemas.openai_compat import (
     VerboseJsonResponse,
     WordItem,
 )
+from app.services.engine_config import get_models
 from app.services.normalization import NormalizationError, extract_duration_ms, normalize_audio
-from app.services.transcription import _SENTENCE_END, TranscriptionError, get_models
+from app.services.protocols import _SENTENCE_END, TranscriptionError
 from app.services.upload import SUPPORTED_EXTENSIONS
 
 logger = structlog.get_logger(__name__)

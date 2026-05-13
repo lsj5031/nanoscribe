@@ -54,7 +54,7 @@ def setup_data_dir(tmp_path: Path):
 def _clean_engine_settings() -> None:
     """Remove all system_settings rows and reset the models singleton."""
     from app.core.config import get_settings
-    from app.services.transcription import reset_models
+    from app.services.engine_config import reset_models
 
     db_path = get_settings().db_path
     if db_path.exists():
@@ -731,7 +731,7 @@ class TestEngineSettingsEndpoint:
         conn.commit()
         conn.close()
 
-        from app.services.transcription import reset_models
+        from app.services.engine_config import reset_models
 
         reset_models()
 
@@ -739,7 +739,7 @@ class TestEngineSettingsEndpoint:
     def teardown_class(cls) -> None:
         """Clean up engine settings after all tests in this class."""
         from app.core.config import get_settings
-        from app.services.transcription import reset_models
+        from app.services.engine_config import reset_models
 
         db_path = get_settings().db_path
         conn = sqlite3.connect(str(db_path))
@@ -978,7 +978,7 @@ class TestEngineSettingsEndpoint:
 
     def test_put_resets_models_singleton(self, client):
         """PUT resets the models singleton so next get_models() picks up new config."""
-        from app.services.transcription import get_models, reset_models
+        from app.services.engine_config import get_models, reset_models
 
         # Force local initialization
         reset_models()

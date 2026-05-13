@@ -86,9 +86,9 @@ def _get_cached_models() -> list[str]:
     """Return list of cached model names."""
     models = []
     try:
-        from app.services.transcription import _models
+        from app.services.engine_config import models_initialized
 
-        if _models is not None:
+        if models_initialized():
             models.append(_settings.asr_model)
     except ImportError:
         logger.debug("transcription_module_not_available")

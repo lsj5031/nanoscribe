@@ -15,8 +15,8 @@ from app.schemas.system import (
     StatusResponse,
 )
 from app.services.capabilities import get_capabilities, get_readiness
+from app.services.engine_config import get_active_engine_config, reset_models
 from app.services.status import get_system_status
-from app.services.transcription import get_active_engine_config, reset_models
 
 router = APIRouter(tags=["system"])
 

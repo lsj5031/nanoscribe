@@ -824,7 +824,7 @@ class TestSSEEventManager:
             events.append(event)
 
         manager.subscribe("job-1", collector)
-        manager.publish("job-1", {"event": "job.stage", "data": {"stage": "preprocessing"}})
+        manager.publish_stage("job-1", "preprocessing")
 
         assert len(events) == 1
         assert events[0]["data"]["stage"] == "preprocessing"
@@ -840,7 +840,7 @@ class TestSSEEventManager:
 
         manager.subscribe("job-1", collector)
         manager.unsubscribe("job-1", collector)
-        manager.publish("job-1", {"event": "job.stage", "data": {"stage": "preprocessing"}})
+        manager.publish_stage("job-1", "preprocessing")
 
         assert len(events) == 0
 
@@ -849,7 +849,7 @@ class TestSSEEventManager:
 
         manager = SSEEventManager()
         # Should not raise
-        manager.publish("nonexistent", {"event": "test", "data": {}})
+        manager.publish_stage("nonexistent", "test")
 
 
 # ---------------------------------------------------------------------------

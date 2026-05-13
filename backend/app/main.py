@@ -78,7 +78,7 @@ async def _lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     # transcription job to trigger the download.
     async def _preload_models() -> None:
         try:
-            from app.services.transcription import get_models
+            from app.services.engine_config import get_models
 
             logger.info("preloading_models")
             models = get_models()

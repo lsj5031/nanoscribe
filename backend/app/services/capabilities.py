@@ -10,7 +10,7 @@ from pathlib import Path
 
 import structlog
 
-from app.services.transcription import get_active_engine_config
+from app.services.engine_config import get_active_engine_config
 
 logger = structlog.get_logger(__name__)
 

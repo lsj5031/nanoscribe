@@ -25,16 +25,15 @@ os.environ.setdefault("NANOSCRIBE_STATIC_DIR", "/tmp/nanoscribe-test-static")
 from app.core.config import get_settings
 from app.db import db_connection
 from app.db.migrate import run_migrations
-from app.services.transcription import (
-    TranscriptionError,
-    TranscriptionModels,
-    _build_segments_from_timestamps,
-    _build_segments_from_vad,
-    _merge_vad_segments,
-    _tokens_to_segment,
-    get_models,
-    is_model_ready,
-    persist_transcript,
+from app.services.engine_config import get_models, is_model_ready
+from app.services.local_transcription import TranscriptionModels
+from app.services.persist import persist_transcript
+from app.services.protocols import TranscriptionError
+from app.services.segments_builder import (
+    build_segments_from_timestamps,
+    build_segments_from_vad,
+    merge_vad_segments,
+    tokens_to_segment,
 )
 
 DATA_DIR = get_settings().data_dir
@@ -48,7 +47,7 @@ DATA_DIR = get_settings().data_dir
 @pytest.fixture(autouse=True)
 def _clean_models_singleton():
     """Reset the module-level models singleton between tests."""
-    import app.services.transcription as mod
+    import app.services.engine_config as mod
 
     old = mod._models
     mod._models = None
@@ -110,11 +109,11 @@ def _insert_memo_and_job(db_path: Path, memo_id: str) -> str:
 
 class TestTokensToSegment:
     def test_empty_tokens_returns_none(self):
-        assert _tokens_to_segment([]) is None
+        assert tokens_to_segment([]) is None
 
     def test_single_token(self):
         tokens = [{"token": "你", "start_time": 1.0, "end_time": 1.1, "score": 0.99}]
-        result = _tokens_to_segment(tokens)
+        result = tokens_to_segment(tokens)
         assert result is not None
         assert result["text"] == "你"
         assert result["start_ms"] == 1000
@@ -126,7 +125,7 @@ class TestTokensToSegment:
             {"token": "你", "start_time": 1.0, "end_time": 1.1, "score": 0.95},
             {"token": "好", "start_time": 1.2, "end_time": 1.3, "score": 0.85},
         ]
-        result = _tokens_to_segment(tokens)
+        result = tokens_to_segment(tokens)
         assert result is not None
         assert result["text"] == "你好"
         assert result["start_ms"] == 1000
@@ -138,7 +137,7 @@ class TestTokensToSegment:
             {"token": "你", "start_time": 1.0, "end_time": 1.1, "score": 0.99},
             {"token": "。", "start_time": 1.1, "end_time": 1.2, "score": 0.0},
         ]
-        result = _tokens_to_segment(tokens)
+        result = tokens_to_segment(tokens)
         assert result is not None
         assert result["confidence"] == 0.99  # Only the non-zero score counted
 
@@ -147,7 +146,7 @@ class TestTokensToSegment:
             {"token": "，", "start_time": 0.5, "end_time": 0.6, "score": 0.0},
             {"token": "。", "start_time": 0.6, "end_time": 0.7, "score": 0.0},
         ]
-        result = _tokens_to_segment(tokens)
+        result = tokens_to_segment(tokens)
         assert result is not None
         assert result["confidence"] == 1.0
 
@@ -159,7 +158,7 @@ class TestTokensToSegment:
 
 class TestBuildSegmentsFromTimestamps:
     def test_empty_timestamps(self):
-        assert _build_segments_from_timestamps([]) == []
+        assert build_segments_from_timestamps([]) == []
 
     def test_single_sentence(self):
         timestamps = [
@@ -167,7 +166,7 @@ class TestBuildSegmentsFromTimestamps:
             {"token": "好", "start_time": 0.1, "end_time": 0.2, "score": 0.98},
             {"token": "。", "start_time": 0.2, "end_time": 0.3, "score": 0.0},
         ]
-        segments = _build_segments_from_timestamps(timestamps)
+        segments = build_segments_from_timestamps(timestamps)
         assert len(segments) == 1
         assert segments[0]["text"] == "你好。"
         assert segments[0]["start_ms"] == 0
@@ -182,7 +181,7 @@ class TestBuildSegmentsFromTimestamps:
             {"token": "界", "start_time": 1.1, "end_time": 1.2, "score": 0.97},
             {"token": "！", "start_time": 1.2, "end_time": 1.3, "score": 0.0},
         ]
-        segments = _build_segments_from_timestamps(timestamps)
+        segments = build_segments_from_timestamps(timestamps)
         assert len(segments) == 2
         assert segments[0]["text"] == "你好。"
         assert segments[0]["start_ms"] == 0
@@ -199,7 +198,7 @@ class TestBuildSegmentsFromTimestamps:
             {"token": "谢", "start_time": 1.0, "end_time": 1.1, "score": 0.95},
             {"token": "谢", "start_time": 1.1, "end_time": 1.2, "score": 0.96},
         ]
-        segments = _build_segments_from_timestamps(timestamps)
+        segments = build_segments_from_timestamps(timestamps)
         assert len(segments) == 2
         assert segments[1]["text"] == "谢谢"
 
@@ -210,7 +209,7 @@ class TestBuildSegmentsFromTimestamps:
             {"token": "World", "start_time": 1.0, "end_time": 1.5, "score": 0.98},
             {"token": "!", "start_time": 1.5, "end_time": 1.6, "score": 0.0},
         ]
-        segments = _build_segments_from_timestamps(timestamps)
+        segments = build_segments_from_timestamps(timestamps)
         assert len(segments) == 2
         assert segments[0]["text"] == "Hello."
         assert segments[1]["text"] == "World!"
@@ -224,7 +223,7 @@ class TestBuildSegmentsFromTimestamps:
             {"token": "C", "start_time": 5.0, "end_time": 5.5, "score": 0.9},
             {"token": "。", "start_time": 5.5, "end_time": 5.6, "score": 0.0},
         ]
-        segments = _build_segments_from_timestamps(timestamps)
+        segments = build_segments_from_timestamps(timestamps)
         assert len(segments) == 3
         for i in range(len(segments) - 1):
             assert segments[i]["start_ms"] <= segments[i + 1]["start_ms"]
@@ -237,18 +236,18 @@ class TestBuildSegmentsFromTimestamps:
 
 class TestBuildSegmentsFromVad:
     def test_empty_inputs(self):
-        assert _build_segments_from_vad([], "text") == []
-        assert _build_segments_from_vad([[0, 1000]], "") == []
+        assert build_segments_from_vad([], "text") == []
+        assert build_segments_from_vad([[0, 1000]], "") == []
 
     def test_single_vad_segment(self):
-        segments = _build_segments_from_vad([[0, 5000]], "你好世界")
+        segments = build_segments_from_vad([[0, 5000]], "你好世界")
         assert len(segments) == 1
         assert segments[0]["text"] == "你好世界"
         assert segments[0]["start_ms"] == 0
         assert segments[0]["end_ms"] == 5000
 
     def test_multiple_vad_segments_proportional_split(self):
-        segments = _build_segments_from_vad(
+        segments = build_segments_from_vad(
             [[0, 2000], [3000, 5000], [6000, 10000]],
             "你好世界测试文本",
         )
@@ -261,13 +260,13 @@ class TestBuildSegmentsFromVad:
         assert combined == "你好世界测试文本"
 
     def test_zero_duration_vad(self):
-        segments = _build_segments_from_vad([[1000, 1000], [2000, 2000]], "text")
+        segments = build_segments_from_vad([[1000, 1000], [2000, 2000]], "text")
         # Falls through to single segment covering full range
         assert len(segments) >= 1
 
     def test_remaining_text_appended_to_last(self):
         # More text than VAD time
-        segments = _build_segments_from_vad([[0, 100]], "这是一个很长的文本")
+        segments = build_segments_from_vad([[0, 100]], "这是一个很长的文本")
         assert len(segments) >= 1
         # All text should be captured
         combined = "".join(seg["text"] for seg in segments).replace(" ", "")
@@ -296,19 +295,19 @@ class TestTranscriptionModels:
             with pytest.raises(TranscriptionError):
                 models.transcribe("/tmp/test.wav")
 
-    @patch("app.services.transcription._get_remote_code_path", return_value="/fake/model.py")
+    @patch("app.services.local_transcription._get_remote_code_path", return_value="/fake/model.py")
     def test_load_verifies_cache(self, _mock_rc):
         # With ephemeral models, load() just checks disk cache
-        with patch("app.services.transcription.TranscriptionModels._detect_device", return_value="cpu"):
+        with patch("app.services.local_transcription.TranscriptionModels._detect_device", return_value="cpu"):
             with patch.object(TranscriptionModels, "_model_cache_dir", return_value=Path("/fake/cache")):
                 with patch.object(Path, "is_dir", return_value=True):
                     models = TranscriptionModels()
                     models.load()
                     assert models.is_loaded
 
-    @patch("app.services.transcription._get_remote_code_path", return_value="/fake/model.py")
+    @patch("app.services.local_transcription._get_remote_code_path", return_value="/fake/model.py")
     def test_load_idempotent(self, _mock_rc):
-        with patch("app.services.transcription.TranscriptionModels._detect_device", return_value="cpu"):
+        with patch("app.services.local_transcription.TranscriptionModels._detect_device", return_value="cpu"):
             with patch.object(TranscriptionModels, "_model_cache_dir", return_value=Path("/fake/cache")):
                 with patch.object(Path, "is_dir", return_value=True):
                     models = TranscriptionModels()
@@ -393,10 +392,10 @@ class TestTranscriptionModels:
         with (
             patch.object(models, "_create_vad_model", return_value=mock_vad),
             patch.object(models, "_create_asr_model", return_value=mock_asr),
-            patch("app.services.transcription._extract_chunk") as mock_extract,
+            patch("app.services.local_transcription.extract_chunk") as mock_extract,
             patch.object(models, "_create_punc_model", return_value=mock_punc),
         ):
-            # _extract_chunk returns (path, padded_start_ms)
+            # extract_chunk returns (path, padded_start_ms)
             mock_extract.return_value = (Path("/tmp/fake_chunk.wav"), 0)
             result = models.transcribe("/tmp/test.wav")
         assert result["text"] == "你好世界。"
@@ -448,9 +447,9 @@ class TestTranscriptionModels:
         with (
             patch.object(models, "_create_vad_model", return_value=mock_vad),
             patch.object(models, "_create_asr_model", return_value=mock_asr),
-            patch("app.services.transcription._extract_chunk") as mock_extract,
+            patch("app.services.local_transcription.extract_chunk") as mock_extract,
             patch.object(models, "_create_punc_model", return_value=mock_punc),
-            patch("app.services.transcription._merge_vad_segments", return_value=[[0, 2000], [5000, 8000]]),
+            patch("app.services.local_transcription.merge_vad_segments", return_value=[[0, 2000], [5000, 8000]]),
         ):
             mock_extract.side_effect = [(Path("/tmp/chunk1.wav"), 0), (Path("/tmp/chunk2.wav"), 4800)]
             result = models.transcribe("/tmp/test.wav")
@@ -490,7 +489,7 @@ class TestPersistTranscript:
         raw_output = [{"key": "test", "text": "你好世界"}]
         segments = [{"start_ms": 0, "end_ms": 2000, "text": "你好世界", "confidence": 0.95}]
 
-        with patch("app.services.transcription.DATA_DIR", tmp_path):
+        with patch("app.services.persist.DATA_DIR", tmp_path):
             persist_transcript(memo_id, raw_output, segments, tmp_db)
 
         # Check files
@@ -515,7 +514,7 @@ class TestPersistTranscript:
             {"start_ms": 1500, "end_ms": 3000, "text": "第二段", "confidence": 0.85},
         ]
 
-        with patch("app.services.transcription.DATA_DIR", tmp_path):
+        with patch("app.services.persist.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], segments, tmp_db)
 
         with db_connection(tmp_db) as conn:
@@ -535,7 +534,7 @@ class TestPersistTranscript:
         memo_dir = tmp_path / "memos" / memo_id
         memo_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("app.services.transcription.DATA_DIR", tmp_path):
+        with patch("app.services.persist.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], [{"start_ms": 0, "end_ms": 100, "text": "t", "confidence": 1.0}], tmp_db)
 
         with db_connection(tmp_db) as conn:
@@ -552,7 +551,7 @@ class TestPersistTranscript:
         memo_dir = tmp_path / "memos" / memo_id
         memo_dir.mkdir(parents=True, exist_ok=True)
 
-        with patch("app.services.transcription.DATA_DIR", tmp_path):
+        with patch("app.services.persist.DATA_DIR", tmp_path):
             # First persist
             persist_transcript(memo_id, [], [{"start_ms": 0, "end_ms": 100, "text": "old", "confidence": 1.0}], tmp_db)
             # Second persist (retry scenario)
@@ -574,7 +573,7 @@ class TestPersistTranscript:
             for i in range(5)
         ]
 
-        with patch("app.services.transcription.DATA_DIR", tmp_path):
+        with patch("app.services.persist.DATA_DIR", tmp_path):
             persist_transcript(memo_id, [], segments, tmp_db)
 
         with db_connection(tmp_db) as conn:
@@ -601,24 +600,24 @@ class TestPersistTranscript:
 
 class TestMergeVadSegments:
     def test_empty_input(self):
-        assert _merge_vad_segments([]) == []
+        assert merge_vad_segments([]) == []
 
     def test_single_segment(self):
-        assert _merge_vad_segments([[0, 1000]]) == [[0, 1000]]
+        assert merge_vad_segments([[0, 1000]]) == [[0, 1000]]
 
     def test_merge_close_segments(self):
         # Segments within 800ms gap should be merged
-        result = _merge_vad_segments([[0, 1000], [1500, 3000]])
+        result = merge_vad_segments([[0, 1000], [1500, 3000]])
         assert result == [[0, 3000]]
 
     def test_no_merge_large_gap(self):
         # Segments with >800ms gap should NOT be merged
-        result = _merge_vad_segments([[0, 1000], [3000, 5000]])
+        result = merge_vad_segments([[0, 1000], [3000, 5000]])
         assert result == [[0, 1000], [3000, 5000]]
 
     def test_merge_respects_max_duration(self):
         # Even with small gap, don't merge if result exceeds max duration
-        result = _merge_vad_segments(
+        result = merge_vad_segments(
             [[0, 20000], [20500, 40000]],
             gap_threshold_ms=800,
             max_duration_ms=30000,
@@ -627,12 +626,12 @@ class TestMergeVadSegments:
 
     def test_chain_merge(self):
         # Three segments close together → all merged
-        result = _merge_vad_segments([[0, 1000], [1500, 3000], [3200, 5000]])
+        result = merge_vad_segments([[0, 1000], [1500, 3000], [3200, 5000]])
         assert result == [[0, 5000]]
 
     def test_partial_chain_merge(self):
         # First two merge, third is too far
-        result = _merge_vad_segments([[0, 1000], [1500, 3000], [5000, 7000]])
+        result = merge_vad_segments([[0, 1000], [1500, 3000], [5000, 7000]])
         assert result == [[0, 3000], [5000, 7000]]
 
 
@@ -644,7 +643,7 @@ class TestMergeVadSegments:
 class TestModuleFunctions:
     def test_get_models_creates_singleton(self):
         with patch(
-            "app.services.transcription.get_active_engine_config",
+            "app.services.engine_config.get_active_engine_config",
             return_value={
                 "engine": "local",
                 "remote_url": "",
@@ -660,7 +659,7 @@ class TestModuleFunctions:
 
     def test_is_model_ready_false_initially(self):
         with patch(
-            "app.services.transcription.get_active_engine_config",
+            "app.services.engine_config.get_active_engine_config",
             return_value={
                 "engine": "local",
                 "remote_url": "",

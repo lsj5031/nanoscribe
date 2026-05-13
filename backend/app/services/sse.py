@@ -61,20 +61,50 @@ class SSEEventManager:
         """
         self._main_loop = loop
 
-    def publish(self, job_id: str, event: dict) -> None:
-        """Publish an event to all subscribers of a job."""
+    # -- Internal dispatch ---------------------------------------------------
+
+    def _publish_async(self, job_id: str, event: dict) -> None:
+        """Publish from an async context, with sync/test fallbacks."""
         callbacks = self._subscribers.get(job_id, [])
         for cb in callbacks:
             try:
-                # Fire and forget — the subscriber handles its own event loop
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(cb(event))
-                except RuntimeError:
-                    # No running loop — create one
-                    asyncio.run(cb(event))
+                loop = asyncio.get_running_loop()
+                loop.create_task(cb(event))
+            except RuntimeError:
+                loop = self._main_loop
+                if loop is not None and not loop.is_closed():
+                    try:
+                        loop.call_soon_threadsafe(
+                            lambda cb=cb, event=event: asyncio.ensure_future(cb(event), loop=loop)
+                        )
+                    except Exception as exc:
+                        logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
+                else:
+                    try:
+                        asyncio.run(cb(event))
+                    except Exception as exc:
+                        logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
             except Exception as exc:
                 logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
+
+    def _publish_sync(self, job_id: str, event: dict) -> None:
+        """Publish from a sync (thread) context — uses ``call_soon_threadsafe``."""
+        loop = self._main_loop
+        if loop is not None and not loop.is_closed():
+            callbacks = self._subscribers.get(job_id, [])
+            for cb in callbacks:
+                try:
+                    loop.call_soon_threadsafe(lambda cb=cb, event=event: asyncio.ensure_future(cb(event), loop=loop))
+                except Exception as exc:
+                    logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
+        else:
+            logger.warning("sse_publish_no_main_loop", job_id=job_id, event_type=event.get("event"))
+
+    # -- Typed publish methods -----------------------------------------------
+
+    def publish_stage(self, job_id: str, stage: str) -> None:
+        """Publish a stage transition event."""
+        self._publish_async(job_id, {"event": EVENT_STAGE, "data": {"stage": stage}})
 
     def publish_progress(
         self,
@@ -86,12 +116,13 @@ class SSEEventManager:
         """Publish a progress event, throttled to ~1/second.
 
         VAL-JOB-018: No more than one progress event per second.
+        Call from an async context (or use ``publish_progress_threadsafe`` from threads).
         """
         now = time.monotonic()
         last = self._last_progress_time.get(job_id, 0)
 
         if now - last < PROGRESS_THROTTLE_SECONDS and progress < 1.0:
-            return  # Throttled
+            return
 
         self._last_progress_time[job_id] = now
         data: dict[str, Any] = {"progress": round(progress, 4)}
@@ -99,19 +130,56 @@ class SSEEventManager:
             data["stage"] = stage
         if detail:
             data["detail"] = detail
-        self.publish(job_id, {"event": EVENT_PROGRESS, "data": data})
+        self._publish_async(job_id, {"event": EVENT_PROGRESS, "data": data})
 
-    def publish_stage(self, job_id: str, stage: str) -> None:
-        """Publish a stage transition event."""
-        self.publish(job_id, {"event": EVENT_STAGE, "data": {"stage": stage}})
+    def publish_progress_threadsafe(
+        self,
+        job_id: str,
+        progress: float,
+        stage: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Thread-safe variant of publish_progress for use from worker threads.
+
+        Schedules the event on the main event loop via ``call_soon_threadsafe``
+        so that worker threads (running transcription via ``asyncio.to_thread``)
+        can publish chunk-level progress without being on the event loop.
+        """
+        now = time.monotonic()
+        last = self._last_progress_time.get(job_id, 0)
+        if now - last < PROGRESS_THROTTLE_SECONDS and progress < 1.0:
+            return
+
+        self._last_progress_time[job_id] = now
+        data: dict[str, Any] = {"progress": round(progress, 4)}
+        if stage:
+            data["stage"] = stage
+        if detail:
+            data["detail"] = detail
+
+        event = {"event": EVENT_PROGRESS, "data": data}
+        loop = self._main_loop
+        if loop is not None and not loop.is_closed():
+            callbacks = self._subscribers.get(job_id, [])
+            for cb in callbacks:
+                try:
+                    loop.call_soon_threadsafe(lambda cb=cb, event=event: asyncio.ensure_future(cb(event), loop=loop))
+                except Exception as exc:
+                    logger.warning("sse_subscriber_error", job_id=job_id, error=str(exc))
+        else:
+            logger.warning("sse_publish_no_main_loop", job_id=job_id, event_type=event.get("event"))
+
+    def publish_waveform_ready(self, job_id: str, memo_id: str) -> None:
+        """Publish a waveform.ready event."""
+        self._publish_async(job_id, {"event": EVENT_WAVEFORM_READY, "data": {"memo_id": memo_id}})
 
     def publish_completed(self, job_id: str) -> None:
         """Publish a job completion event."""
-        self.publish(job_id, {"event": EVENT_COMPLETED, "data": {"status": "completed"}})
+        self._publish_async(job_id, {"event": EVENT_COMPLETED, "data": {"status": "completed"}})
 
     def publish_failed(self, job_id: str, error_code: str, error_message: str) -> None:
         """Publish a job failure event."""
-        self.publish(
+        self._publish_async(
             job_id,
             {
                 "event": EVENT_FAILED,
@@ -121,28 +189,7 @@ class SSEEventManager:
 
     def publish_cancelled(self, job_id: str) -> None:
         """Publish a job cancellation event."""
-        self.publish(job_id, {"event": EVENT_CANCELLED, "data": {"status": "cancelled"}})
-
-    def publish_progress_threadsafe(
-        self,
-        job_id: str,
-        progress: float,
-        stage: str | None = None,
-        detail: dict[str, Any] | None = None,
-    ) -> None:
-        """Thread-safe variant of ``publish_progress``.
-
-        Schedules ``publish_progress`` on the main event loop via
-        ``call_soon_threadsafe``, so that worker threads (which run
-        transcription in ``asyncio.to_thread``) can publish chunk-level
-        progress without being on the event loop themselves.
-        """
-        loop = self._main_loop
-        if loop is not None and not loop.is_closed():
-            loop.call_soon_threadsafe(self.publish_progress, job_id, progress, stage, detail)
-        else:
-            # Fallback: try the regular path (may fail if no loop)
-            self.publish_progress(job_id, progress, stage, detail)
+        self._publish_async(job_id, {"event": EVENT_CANCELLED, "data": {"status": "cancelled"}})
 
 
 # Module-level singleton
