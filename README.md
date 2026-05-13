@@ -1,24 +1,28 @@
 # NanoScribe
 
-A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voice memo transcription. Upload or record audio, watch progress in real time, edit transcripts, and export results — process locally on your GPU or via a remote OpenAI-compatible API.
+**Transcribe voice memos with AI — privately, on your own machine.**
+
+Drop in an audio file, record from your microphone, or send a Telegram voice message. NanoScribe transcribes it using [FunASR](https://github.com/modelscope/FunASR), shows you progress in real time, and gives you a full transcript editor with speaker labels, timestamps, and export options. Everything runs locally — your audio never leaves your computer.
 
 <p align="center">
   <img src="screenshots/memo-editor.png" alt="NanoScribe Transcript Editor" width="720">
 </p>
 
-## Features
+---
 
-- **Upload & Record** — Drag-and-drop, batch upload, or in-app microphone recording
-- **Real-time Progress** — SSE-based job progress with stage updates
-- **Transcript Editor** — Editable segments with timestamps, click-to-seek, and autosave
-- **Speaker Diarization** — Automatic speaker identification with color-coded badges and inline rename
-- **Full-text Search** — Search across memo titles and transcript content
-- **Export** — TXT, JSON, and SRT formats
-- **Remote API** — Use any OpenAI-compatible API (OpenAI, Groq, etc.) instead of local GPU
-- **OpenAI-Compatible Endpoint** — Drop-in `/v1/audio/transcriptions` for programmatic access
-- **Offline Mode** — Works without internet once models are cached
-- **PWA Installable** — Install as a desktop app with keyboard shortcuts
-- **Telegram Bot** — Transcribe voice messages and audio files via Telegram
+## What You Can Do
+
+- **Transcribe audio** — Upload WAV, MP3, M4A, OGG, and more. Batch upload multiple files at once.
+- **Record directly** — Use your browser microphone to capture voice memos without leaving the app.
+- **Watch live progress** — See transcription happen in real time with stage-by-stage updates.
+- **Edit transcripts** — Fix mistakes, rename speakers, and navigate by clicking timestamps. Your edits save automatically.
+- **Identify speakers** — Automatic speaker diarization with color-coded labels for each person.
+- **Search everything** — Find any memo by title or search inside transcript text.
+- **Export results** — Download transcripts as TXT, JSON, or SRT files.
+- **Use your GPU or the cloud** — Run models locally on your NVIDIA GPU, or connect to any OpenAI-compatible API (OpenAI, Groq, etc.).
+- **Work offline** — Once models are downloaded, you don't need internet. Transcribe anywhere.
+- **Install as an app** — PWA support lets you install NanoScribe as a desktop application.
+- **Transcribe from Telegram** — Send voice messages to an optional Telegram bot and get transcripts back.
 
 ## Screenshots
 
@@ -41,15 +45,19 @@ A polished local web app for [FunASR](https://github.com/modelscope/FunASR) voic
   </tr>
 </table>
 
-## Requirements
+---
 
-- Docker & Docker Compose
-- **Local inference:** NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-- **Remote inference:** Any OpenAI-compatible API endpoint (no GPU needed)
+## Getting Started
 
-## Run it (no build required)
+### What You Need
 
-The fastest way to try NanoScribe is to pull the prebuilt image from GHCR:
+- **Docker** installed on your computer
+- **For local GPU transcription:** An NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- **For cloud transcription:** An API key from OpenAI, Groq, or any OpenAI-compatible service (no GPU needed)
+
+### Option 1: One Command (Recommended)
+
+This pulls the prebuilt image and starts NanoScribe immediately:
 
 ```bash
 mkdir -p data
@@ -57,178 +65,273 @@ docker run -d --name nanoscribe --gpus all \
   -p 8000:8000 -v "$(pwd)/data:/app/data" \
   --restart unless-stopped \
   ghcr.io/lsj5031/nanoscribe:latest
-# open http://localhost:8000
 ```
 
-Or with Docker Compose:
+Then open **http://localhost:8000** in your browser.
+
+> **First run:** The AI models (~2 GB) download automatically into `./data/.modelscope_cache`. This happens once.
+
+### Option 2: Docker Compose
 
 ```bash
 curl -O https://raw.githubusercontent.com/lsj5031/nanoscribe/main/compose.run.yml
 docker compose -f compose.run.yml up -d
 ```
 
-On first run the FunASR models (~2 GB) are downloaded into `./data/.modelscope_cache`.
-Subsequent starts use the local cache.
+Then open **http://localhost:8000**.
 
-## Build from source
+---
+
+## How to Use NanoScribe
+
+### 1. Upload or Record Audio
+
+- **Drag and drop** audio files anywhere on the page
+- **Click to browse** and select files from your computer
+- **Record** directly from your microphone using the record button
+
+Supported formats: WAV, MP3, M4A, AAC, WebM, OGG, Opus. The OpenAI-compatible API endpoint additionally supports MP4, MPEG, MPGA, and FLAC.
+
+### 2. Wait for Transcription
+
+Once you upload a file, NanoScribe starts processing immediately:
+
+1. **Normalizing** — Audio is converted to a consistent format
+2. **Transcribing** — FunASR converts speech to text with timestamps
+3. **Diarizing** — Speakers are identified and labeled (optional)
+4. **Finalizing** — Results are saved and ready to edit
+
+You'll see a progress indicator with estimated time remaining. You can navigate away and come back — processing continues in the background.
+
+### 3. Edit Your Transcript
+
+Click any memo to open the transcript editor:
+
+- **Edit text** — Click any segment and type to fix transcription errors
+- **Jump to audio** — Click a timestamp to seek to that moment in the recording
+- **Rename speakers** — Click a speaker label to give them a real name
+- **Search** — Find specific words inside the transcript
+- **Playback controls** — Adjust speed, use keyboard shortcuts
+
+All edits save automatically. You won't lose work if you refresh the page.
+
+### 4. Export
+
+Click the export button to download your transcript:
+
+| Format | Best for |
+|--------|----------|
+| **TXT** | Plain text, notes, sharing |
+| **JSON** | Programmatic use, data processing |
+| **SRT** | Video subtitles, captioning |
+
+---
+
+## Remote API — No GPU Needed
+
+Don't have an NVIDIA GPU? Use any OpenAI-compatible API instead:
+
+1. Open **Settings** in NanoScribe
+2. Switch the engine from "Local GPU" to "Remote API"
+3. Enter your API details:
+
+| Setting | Example |
+|---------|---------|
+| API URL | `https://api.openai.com/v1` |
+| API Key | `sk-...` |
+| Model | `whisper-1` |
+
+NanoScribe works with any provider that supports the OpenAI `/v1/audio/transcriptions` endpoint — including **Groq**, **Together AI**, and self-hosted alternatives.
+
+You can also set these as environment variables:
 
 ```bash
-# Clone the repository
-git clone https://github.com/lsj5031/nanoscribe.git
-cd nanoscribe
-
-# Build the dev image (uses public nvidia/cuda base by default)
-make build
-
-# Start the dev server (http://localhost:8000)
-make dev
-
-# On first run, models will be downloaded from ModelScope (~2 GB).
-# Subsequent starts use the local cache.
+NANOSCRIBE_REMOTE_ASR_URL=https://api.openai.com/v1
+NANOSCRIBE_REMOTE_ASR_API_KEY=sk-...
+NANOSCRIBE_REMOTE_ASR_MODEL=whisper-1
 ```
 
-## Quick Reference
+---
 
-| Tag | Description |
-|-----|-------------|
-| `latest` | Latest development build |
-| `v0.1.0` | First stable release (recommended) |
+## Telegram Bot
 
-To use a specific version:
+Get transcripts directly in Telegram. Send a voice message or audio file and receive the transcript back in seconds.
+
+### Setup
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and get your token
+2. Copy `bot/.env.example` to `bot/.env` and fill in:
+   - `TELEGRAM_TOKEN` — your bot token from BotFather
+   - `ALLOWED_UIDS` — comma-separated Telegram user IDs that can use the bot
+3. Start the bot alongside NanoScribe:
+
 ```bash
-docker pull ghcr.io/lsj5031/nanoscribe:v0.1.0
+make dev-all
 ```
 
-## Make Commands
+Or start just the bot:
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build the dev Docker image |
-| `make build-prod` | Build the production image (with built SPA) |
-| `make frontend-build` | Build the frontend SPA inside the container |
-| `make dev` | Start dev environment with hot reload |
-| `make dev-all` | Start everything (NanoScribe + bot) |
-| `make shell` | Open an interactive shell in the container |
-| `make check` | Run all quality checks (lint, format, typecheck, tests) |
-| `make backend-check` | Run backend checks (ruff format, ruff check, ty check) |
-| `make backend-test` | Run backend pytest suite inside Docker |
-| `make frontend-check` | Run frontend checks (svelte-check, prettier) |
-| `make test` | Run all tests (currently backend pytest) |
-| `make hooks-install` | Install pre-commit hooks |
-| `make smoke` | Verify FunASR and ModelScope imports |
-| `make clean` | Remove built images and stop containers |
-| `make bot-build` | Build the Telegram bot Docker image |
-| `make bot-up` | Start the Telegram bot |
-| `make bot-logs` | Tail Telegram bot container logs |
-| `make bot-shell` | Open a shell in the bot container |
-| `make bot-up-full` | Start bot with local Telegram API server (>20 MB files) |
+```bash
+make bot-up
+```
 
-## Environment Variables
+### How It Works
 
-### Application Defaults
+- **Short audio (≤ 60s):** Transcribed in a single request
+- **Long audio (> 60s):** Split into chunks, transcribed with progressive updates in Telegram
+- All transcription happens through NanoScribe's local backend — your audio stays on your machine
+- Bot transcriptions are ephemeral and don't appear in the NanoScribe library
 
-Defaults come from `backend/app/core/config.py`. The `docker-compose.yml` may override some values (e.g. `NANOSCRIBE_OFFLINE=1`).
+### Supported Audio Formats
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NANOSCRIBE_DATA_DIR` | `/app/data` | Root directory for all persistent data |
-| `NANOSCRIBE_STATIC_DIR` | `/app/static` | Path to built frontend SPA |
-| `NANOSCRIBE_OFFLINE` | `0` | Set to `1` to skip remote model checks/downloads |
-| `NANOSCRIBE_API_KEY` | _(empty)_ | Bearer token for the OpenAI-compatible endpoint |
-| `NANOSCRIBE_REMOTE_ASR_URL` | _(empty)_ | Remote ASR endpoint URL (include `/v1` prefix) |
-| `NANOSCRIBE_REMOTE_ASR_API_KEY` | _(empty)_ | API key for the remote ASR provider |
-| `NANOSCRIBE_REMOTE_ASR_MODEL` | `whisper-1` | Model ID for the remote ASR provider |
-| `NANOSCRIBE_REMOTE_ASR_TIMEOUT` | `900` | Remote ASR request timeout in seconds |
-| `NANOSCRIBE_KEEP_MODELS_WARM` | _(empty)_ | Keep models on GPU: `1`=always, `0`=never, empty=auto |
-| `NANOSCRIBE_VAD_MAX_CHUNK_MS` | `0` | Max VAD chunk size in ms (`0` = auto-detect from VRAM) |
-| `NANOSCRIBE_VAD_MERGE_GAP_MS` | `800` | Gap (ms) between VAD segments to merge |
-| `NANOSCRIBE_VAD_CHUNK_BUFFER_MS` | `200` | Buffer (ms) added to each VAD chunk boundary |
-| `NANOSCRIBE_VAD_MIN_CHUNK_MS` | `400` | Minimum VAD chunk duration in ms |
-| `HF_HUB_OFFLINE` | `0` | Set to `1` to prevent HuggingFace downloads |
-| `MODELSCOPE_CACHE` | `/app/data/.modelscope_cache` | ModelScope model cache directory |
-| `PYTORCH_CUDA_ALLOC_CONF` | `expandable_segments:True` | CUDA memory allocator config |
+WAV, MP3, M4A, AAC, WebM, OGG, Opus, MP4, MPEG, MPGA, FLAC
+
+### Large Files (> 20 MB)
+
+Telegram's public API limits file downloads to 20 MB. For larger files, use a local Telegram Bot API server:
+
+```bash
+# Get API credentials from https://my.telegram.org
+# Add TELEGRAM_API_ID and TELEGRAM_API_HASH to bot/.env
+make bot-up-full
+```
+
+---
+
+## Configuration
+
+### Key Environment Variables
+
+These are the settings most users care about. See the [full reference](#all-environment-variables) below for every available option.
+
+| Variable | What it does | Default |
+|----------|-------------|---------|
+| `NANOSCRIBE_OFFLINE` | Set to `1` to prevent model downloads (use cached models) | `0` |
+| `NANOSCRIBE_API_KEY` | Protect the API with a bearer token | *(none)* |
+| `NANOSCRIBE_REMOTE_ASR_URL` | Remote ASR endpoint (include `/v1` prefix) | *(none)* |
+| `NANOSCRIBE_REMOTE_ASR_API_KEY` | API key for the remote provider | *(none)* |
+| `NANOSCRIBE_REMOTE_ASR_MODEL` | Model ID for the remote provider | `whisper-1` |
 
 ### Offline Mode
 
-If you've already downloaded models and want to run without internet:
+Already downloaded the models and want to run without internet?
 
 ```yaml
-# In docker-compose.yml, set:
 environment:
   - HF_HUB_OFFLINE=1
   - NANOSCRIBE_OFFLINE=1
 ```
 
-This prevents FunASR from checking for model updates and 3D-Speaker from attempting downloads. The default dev `docker-compose.yml` sets these to `0` so models download on first run. Fresh deployments should keep these at `0` until models are cached.
+This prevents any network requests for model updates.
 
-## Project Structure
+---
+
+## API Access
+
+NanoScribe exposes an OpenAI-compatible endpoint at `/v1/audio/transcriptions`. You can use it with any tool or library that works with the OpenAI transcription API:
+
+```bash
+curl http://localhost:8000/v1/audio/transcriptions \
+  -F "file=@recording.mp3" \
+  -F "model=whisper-1" \
+  -F "response_format=verbose_json"
+```
+
+If you set `NANOSCRIBE_API_KEY`, include it as a Bearer token:
+
+```bash
+curl http://localhost:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer your-api-key" \
+  -F "file=@recording.mp3" \
+  -F "model=whisper-1"
+```
+
+---
+
+## For Developers
+
+### Building from Source
+
+```bash
+git clone https://github.com/lsj5031/nanoscribe.git
+cd nanoscribe
+
+# Build the dev image
+make build
+
+# Start the dev server with hot reload
+make dev
+
+# On first run, the frontend SPA is built automatically.
+# Open http://localhost:8000 once the build completes.
+```
+
+### Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start dev environment with hot reload |
+| `make dev-all` | Start NanoScribe + Telegram bot |
+| `make shell` | Open a shell inside the container |
+| `make check` | Run all quality checks (lint, format, typecheck, tests) |
+| `make backend-check` | Backend checks (ruff, ty) |
+| `make frontend-check` | Frontend checks (svelte-check, prettier) |
+| `make backend-test` | Run the pytest suite |
+| `make build` | Build the dev Docker image |
+| `make build-prod` | Build the production image |
+| `make clean` | Remove built images and stop containers |
+| `make hooks-install` | Install pre-commit hooks |
+
+### Project Structure
 
 ```
-bot/                    # Telegram bot
-  bot.py                # Main bot logic (aiogram)
-  requirements.txt      # Python dependencies
-  Dockerfile            # Bot container build
-  .env.example          # Bot env template
-
+bot/                    # Telegram bot (aiogram)
 frontend/               # SvelteKit SPA
   src/
-    lib/
-      components/       # Svelte UI components
-      stores/           # Svelte reactive stores
-    routes/             # SvelteKit routes
-  package.json
-  pnpm-lock.yaml
-  pnpm-workspace.yaml  # pnpm build-script approvals
-
+    lib/components/     # UI components
+    lib/stores/         # Reactive state stores
+    routes/             # Page routes
 backend/                # FastAPI backend
   app/
-    api/                # REST API endpoints
+    api/                # REST endpoints
     core/               # Config and dependencies
-    db/                 # SQLite migrations and helpers
-    schemas/            # Pydantic request/response models
-    services/           # Business logic services
-  tests/                # pytest test suite
-  pyproject.toml
-
+    db/                 # SQLite and migrations
+    schemas/            # Pydantic models
+    services/           # Business logic
+  tests/                # pytest suite
 data/                   # Persistent storage (bind-mounted)
-  nanoscribe.db         # SQLite database
-  .modelscope_cache/    # Downloaded models
-  memos/                # Audio and transcript files
-
-Dockerfile              # Multi-stage build (dev + production)
-docker-compose.yml      # Dev environment configuration
-Makefile                # Development commands
 ```
 
-## Storage Layout
+### Storage Layout
 
 ```
 /app/data/
-  nanoscribe.db
+  nanoscribe.db              # SQLite database
+  .modelscope_cache/         # Downloaded AI models
   memos/
     <memo_id>/
-      source.original       # Uploaded audio (original format)
-      normalized.wav        # ffmpeg-normalized 16kHz mono WAV
-      waveform.json         # Waveform peak data for visualization
-      transcript.raw.json   # Raw FunASR output
-      transcript.final.json # Editor-ready segment data
-      exports/              # Generated exports (txt, json, srt)
+      source.original        # Original uploaded audio
+      normalized.wav         # Normalized 16kHz mono WAV
+      waveform.json          # Waveform peaks for visualization
+      transcript.raw.json    # Raw FunASR output
+      transcript.final.json  # Editor-ready segments
+      exports/               # Generated exports (txt, json, srt)
 ```
 
-## Models
+### AI Models
 
-NanoScribe uses these FunASR models (auto-downloaded on first run):
+NanoScribe uses these FunASR models, downloaded automatically to `data/.modelscope_cache/`:
 
-| Model | ID | Purpose |
-|-------|----|---------|
-| Fun-ASR-Nano-2512 | `FunAudioLLM/Fun-ASR-Nano-2512` | Speech recognition with timestamps |
-| fsmn-vad | `iic/speech_fsmn_vad_zh-cn-16k-common-pytorch` | Voice activity detection |
-| ct-punc | `iic/punc_ct-transformer_cn-en-common-vocab471067-large` | Punctuation restoration |
-| CAM++ | `iic/speech_campplus_sv_zh_en_16k-common_advanced` | Speaker diarization |
+| Model | Purpose |
+|-------|---------|
+| Fun-ASR-Nano-2512 | Speech recognition with timestamps |
+| fsmn-vad | Voice activity detection |
+| ct-punc | Punctuation restoration |
+| CAM++ | Speaker diarization |
 
-Models are stored in `data/.modelscope_cache/` and loaded ephemerally onto the GPU during inference to conserve VRAM.
+Models load onto the GPU during inference and unload afterward to conserve VRAM.
 
-## API Overview
+### Full API Reference
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -238,17 +341,17 @@ Models are stored in `data/.modelscope_cache/` and loaded ephemerally onto the G
 | `/api/system/status` | GET | System status and storage info |
 | `/api/system/settings/engine` | GET | Current engine configuration |
 | `/api/system/settings/engine` | PUT | Update engine configuration |
-| `/api/memos` | GET/POST | List or upload memos |
-| `/api/memos/{id}` | GET/DELETE | Get or delete a memo |
+| `/api/memos` | GET / POST | List or upload memos |
+| `/api/memos/{id}` | GET / DELETE | Get or delete a memo |
 | `/api/memos/{id}/audio` | GET | Stream audio file |
 | `/api/memos/{id}/waveform` | GET | Waveform peak data |
-| `/api/memos/{id}/segments` | GET/PATCH | Get or edit transcript segments |
-| `/api/memos/{id}/speakers` | GET/PATCH | Get or rename speakers |
+| `/api/memos/{id}/segments` | GET / PATCH | Get or edit transcript segments |
+| `/api/memos/{id}/speakers` | GET / PATCH | Get or rename speakers |
 | `/api/memos/{id}/reprocess` | POST | Re-run transcription |
 | `/api/memos/{id}/regenerate-diarization` | POST | Re-run diarization only |
 | `/api/memos/{id}/retry` | POST | Retry last failed job |
 | `/api/memos/{id}/jobs` | GET | List jobs for a memo |
-| `/api/memos/{id}/export` | GET | Export (txt/json/srt) |
+| `/api/memos/{id}/export` | GET | Export (txt, json, srt) |
 | `/api/jobs/{id}` | GET | Job status |
 | `/api/jobs/{id}/events` | GET | SSE event stream |
 | `/api/jobs/{id}/cancel` | POST | Cancel a running job |
@@ -256,67 +359,35 @@ Models are stored in `data/.modelscope_cache/` and loaded ephemerally onto the G
 | `/v1/audio/transcriptions` | POST | OpenAI-compatible transcription |
 | `/v1/models` | GET | OpenAI-compatible model list |
 
-## Telegram Bot
+### All Environment Variables
 
-The bot transcribes voice messages and audio files via Telegram using NanoScribe's
-FunASR pipeline as the backend.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NANOSCRIBE_DATA_DIR` | `/app/data` | Root directory for all persistent data |
+| `NANOSCRIBE_STATIC_DIR` | `/app/static` | Path to built frontend SPA |
+| `NANOSCRIBE_OFFLINE` | `0` | Set to `1` to skip remote model checks/downloads |
+| `NANOSCRIBE_API_KEY` | *(empty)* | Bearer token for the OpenAI-compatible endpoint |
+| `NANOSCRIBE_REMOTE_ASR_URL` | *(empty)* | Remote ASR endpoint URL (include `/v1` prefix) |
+| `NANOSCRIBE_REMOTE_ASR_API_KEY` | *(empty)* | API key for the remote ASR provider |
+| `NANOSCRIBE_REMOTE_ASR_MODEL` | `whisper-1` | Model ID for the remote ASR provider |
+| `NANOSCRIBE_REMOTE_ASR_TIMEOUT` | `900` | Remote ASR request timeout in seconds |
+| `NANOSCRIBE_KEEP_MODELS_WARM` | *(empty)* | Keep models on GPU: `1`=always, `0`=never, empty=auto |
+| `NANOSCRIBE_VAD_MAX_CHUNK_MS` | `0` | Max VAD chunk size in ms (`0` = auto-detect from VRAM) |
+| `NANOSCRIBE_VAD_MERGE_GAP_MS` | `800` | Gap (ms) between VAD segments to merge |
+| `NANOSCRIBE_VAD_CHUNK_BUFFER_MS` | `200` | Buffer (ms) added to each VAD chunk boundary |
+| `NANOSCRIBE_VAD_MIN_CHUNK_MS` | `400` | Minimum VAD chunk duration in ms |
+| `HF_HUB_OFFLINE` | `0` | Set to `1` to prevent HuggingFace downloads |
+| `MODELSCOPE_CACHE` | `/app/data/.modelscope_cache` | ModelScope model cache directory |
+| `PYTORCH_CUDA_ALLOC_CONF` | `expandable_segments:True` | CUDA memory allocator config |
 
-### Setup
+### Development Workflow
 
-1. Create a bot with [@BotFather](https://t.me/BotFather) on Telegram and get a token
-2. Copy `bot/.env.example` to `bot/.env` and fill in:
-   - `TELEGRAM_TOKEN` — your bot token
-   - `ALLOWED_UIDS` — comma-separated Telegram user IDs allowed to use the bot
-3. Start the bot alongside NanoScribe:
-   ```bash
-   make dev-all
-   ```
+All development happens inside Docker — you don't need Python, Node.js, or pnpm installed on your host.
 
-Or start the bot separately:
-   ```bash
-   make bot-up
-   make bot-logs  # watch logs
-   ```
-
-### For Large Files (>20 MB)
-
-Telegram's public API limits uploaded file downloads to 20 MB.  For larger files,
-start a [local Telegram Bot API server](https://github.com/aiogram/telegram-bot-api):
-
-```bash
-# Get API credentials at https://my.telegram.org
-# Add TELEGRAM_API_ID and TELEGRAM_API_HASH to bot/.env
-make bot-up-full
-```
-
-### Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message |
-| `/help` | Usage instructions and supported formats |
-
-### Supported Audio Formats
-
-`wav`, `mp3`, `m4a`, `aac`, `webm`, `ogg`, `opus`, `mp4`, `mpeg`, `mpga`, `flac`
-
-### How It Works
-
-- **Short audio (≤ 60s):** Sent as a single request to NanoScribe's `/v1/audio/transcriptions` endpoint
-- **Long audio (> 60s):** Split into ~60s chunks with 2s overlap, transcribed sequentially with progressive Telegram message updates
-- No authentication required between bot and NanoScribe (trusted internal Docker network)
-- Bot transcriptions are ephemeral — they do not create memos in NanoScribe's library
-
-
-## Development
-
-### Backend
+**Backend:**
 
 ```bash
-# Run inside the container
-make shell
-
-# Then inside the container:
+make shell   # enter the container
 cd /app/backend
 ruff format .          # Auto-format
 ruff check .           # Lint
@@ -324,13 +395,10 @@ ty check .             # Type check
 python -m pytest       # Run tests
 ```
 
-### Frontend
+**Frontend:**
 
 ```bash
-# Run inside the container
-make shell
-
-# Then inside the container:
+make shell   # enter the container
 cd /app/frontend
 pnpm dev               # Dev server with HMR
 pnpm check             # Svelte type checking
@@ -338,27 +406,9 @@ pnpm format:check      # Prettier format check
 pnpm build             # Production build
 ```
 
-### Testing
+**CI note:** The CI workflow skips GPU-dependent tests (`test_transcription.py`, `test_diarization.py`) since GitHub runners lack NVIDIA GPUs. These tests can only run locally with `make backend-test`.
 
-```bash
-# Full local verification suite (Docker-backed)
-make check
-
-# Backend test suite only
-make backend-test
-
-# Or run pytest directly inside the container for fine-grained control
-docker compose exec funasr bash -c "cd /app/backend && pytest -v"
-docker compose exec funasr bash -c "cd /app/backend && pytest tests/test_transcription.py -v"
-```
-
-Note: The CI workflow skips GPU-dependent tests (`test_transcription.py` and
-`test_diarization.py`) since GitHub runners lack NVIDIA GPUs. These tests can
-only be run locally with `make backend-test`.
-
-The [CI workflow](.github/workflows/check.yml) runs the same backend and
-frontend check types as `make check`, but installs dependencies natively on the
-GitHub runner. To reproduce the frontend CI install path exactly:
+To reproduce the exact CI path for frontend checks:
 
 ```bash
 cd frontend
@@ -368,6 +418,14 @@ pnpm check
 pnpm format:check
 ```
 
-## Specification
+---
 
-See [SPEC.md](SPEC.md) for the full product and engineering specification.
+## Links
+
+- **GitHub** — [github.com/lsj5031/nanoscribe](https://github.com/lsj5031/nanoscribe)
+- **FunASR** — [github.com/modelscope/FunASR](https://github.com/modelscope/FunASR) (upstream ASR engine)
+- **ModelScope** — [modelscope.cn](https://www.modelscope.cn) (model hub)
+
+Built with ❤️ by [@lsj5031](https://github.com/lsj5031). Contributions welcome — open an issue or PR on GitHub.
+
+

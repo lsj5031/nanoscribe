@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - main
   workflow_dispatch:
 
 env:
@@ -16,7 +14,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # needed for GitHub Release
       packages: write
     steps:
       - uses: actions/checkout@v4
@@ -46,13 +44,63 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=ref,event=tag
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || startsWith(github.ref, 'refs/tags/v') }}
+            # Only tag 'latest' on stable semver tags (e.g. v0.1.0, not v0.1.0-beta).
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
-      - name: Build and push (production)
-        uses: docker/build-push-action@v6
+      - name: Build and load for smoke test
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Smoke test
+        run: |
+          # Extract first tag for docker run
+          FIRST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          echo "Smoke-testing image: $FIRST_TAG"
+
+          # Run container (no GPU in CI — health endpoint responds anyway)
+          docker run -d --name nanoscribe-smoke -p 8000:8000 "$FIRST_TAG"
+
+          # Poll health endpoint.  The Dockerfile HEALTHCHECK has a 60 s
+          # start-period; we give it up to 120 s (24 × 5 s).
+          echo "Waiting for container to respond..."
+          HEALTHY=0
+          for i in $(seq 1 24); do
+            if curl -fsS http://localhost:8000/api/system/health > /tmp/health.json 2>/dev/null; then
+              echo "Health check passed:"
+              cat /tmp/health.json
+              HEALTHY=1
+              break
+            fi
+            echo "  attempt $i/24 — waiting 5s..."
+            sleep 5
+          done
+
+          if [ "$HEALTHY" -eq 0 ]; then
+            echo "ERROR: Container failed to respond within 120s"
+            echo "--- container logs ---"
+            docker logs nanoscribe-smoke
+            docker rm -f nanoscribe-smoke
+            exit 1
+          fi
+
+          # Clean up
+          docker rm -f nanoscribe-smoke
+
+      - name: Push to GHCR
+        uses: docker/build-push-action@v5
         with:
           context: .
           target: production
@@ -62,3 +110,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

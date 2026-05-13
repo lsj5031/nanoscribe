@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.10"
 
       - name: Install system dependencies
         run: |
@@ -38,7 +38,33 @@ jobs:
         run: ty check .
 
       - name: pytest
-        run: pytest -q --ignore=tests/test_transcription.py --ignore=tests/test_diarization.py
+        run: |
+          # GPU-dependent tests (transcription, diarization) are skipped —
+          # they require CUDA + FunASR/3D-Speaker models unavailable in CI.
+          pytest -q --ignore=tests/test_transcription.py --ignore=tests/test_diarization.py
+
+  docker-build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # NOTE: first run pulls nvidia/cuda (~2 GB) and installs PyTorch CUDA
+      # wheels (~2 GB). Expect 10–20 min on cold cache; subsequent runs
+      # benefit from GHA layer caching.
+      - name: Build Docker image (system stage)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: system
+          # Build but don't push — validates the base image, Python 3.10,
+          # system deps (ffmpeg, libsndfile), CUDA PyTorch, and runtime
+          # pip packages all install correctly.
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   frontend-check:
     runs-on: ubuntu-latest
