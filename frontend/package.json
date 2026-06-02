@@ -31,5 +31,11 @@
   },
   "dependencies": {
     "wavesurfer.js": "^7.12.6"
+  },
+  "pnpm": {
+    "overrides": {
+      "vitest": "4.1.7",
+      "undici": "7.26.0"
+    }
   }
 }
