@@ -326,11 +326,6 @@
     {:else}
       <!-- Status badge for completed/failed memos -->
       <div class="flex shrink-0 flex-col items-end gap-1">
-        {#if isFailed && memo.error_message}
-          <span class="text-xs text-error/70 line-clamp-1 max-w-[200px]" title={memo.error_message}
-            >{memo.error_message}</span
-          >
-        {/if}
         <span
           class="shrink-0 rounded-none border border-text-primary/20 px-2 py-1 text-xs uppercase tracking-[0.2em] font-medium {getStatusColor(
             memo.status

@@ -237,6 +237,12 @@ class TranscriptionStage:
             )
 
         try:
+            if ctx.normalized_path is None:
+                logger.error("transcription_skipped_no_normalized_path")
+                job_service.fail_job(ctx.db_path, ctx.job_id, "NORMALIZATION_FAILED", "Normalized audio not available")
+                sse.publish_failed(ctx.job_id, "NORMALIZATION_FAILED", "Normalized audio not available")
+                return False
+
             models = get_models()
             result = await asyncio.to_thread(
                 models.transcribe,
@@ -302,6 +308,12 @@ class DiarizationStage:
         try:
             from app.services.diarization import run_diarization
             from app.services.diarization_merge import merge_diarization
+
+            if ctx.normalized_path is None:
+                logger.warning("diarization_skipped_no_normalized_path")
+                job_service.update_progress(ctx.db_path, ctx.job_id, progress_end)
+                sse.publish_progress(ctx.job_id, progress_end, "diarizing")
+                return True
 
             diarization_segments = await asyncio.to_thread(run_diarization, ctx.normalized_path)
 
@@ -486,6 +498,12 @@ class DiarizeOnlyStage:
         existing_segments = ctx.result["segments"] if ctx.result else []
 
         try:
+            if ctx.normalized_path is None:
+                logger.warning("diarization_skipped_no_normalized_path", job_type="diarize")
+                job_service.update_progress(ctx.db_path, ctx.job_id, 0.7)
+                sse.publish_progress(ctx.job_id, 0.7, "diarizing")
+                return True
+
             diarization_segments = await asyncio.to_thread(run_diarization, ctx.normalized_path)
 
             if diarization_segments:

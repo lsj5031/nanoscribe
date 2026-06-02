@@ -616,8 +616,14 @@ export function getActiveJobCount(): number {
 }
 
 /**
- * Cleanup all SSE connections (call on unmount).
+ * Cleanup all SSE connections and clear stale memo data (call on unmount).
+ * Clearing memos ensures the TopBar's active-job count resets to 0
+ * until a fresh fetchMemos() populates current data.
  */
 export function cleanup(): void {
   disconnectAllSSE();
+  state.memos = [];
+  state.total = 0;
+  state.page = 1;
+  state.error = null;
 }

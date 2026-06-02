@@ -93,9 +93,7 @@ def persist_transcript(
         conn.execute(
             """
             UPDATE memos
-            SET status = 'completed',
-                transcript_revision = 1,
-                speaker_count = 0,
+            SET speaker_count = 0,
                 updated_at = ?
             WHERE id = ?
             """,

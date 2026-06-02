@@ -12,6 +12,7 @@ from __future__ import annotations
 import structlog
 
 from app.core.config import get_settings
+from app.services.protocols import TranscriptionBackend
 
 logger = structlog.get_logger(__name__)
 
@@ -54,10 +55,10 @@ def get_active_engine_config() -> dict[str, str]:
 
 
 # Module-level singleton for the active transcription backend
-_models: object | None = None
+_models: TranscriptionBackend | None = None
 
 
-def get_models() -> object:
+def get_models() -> TranscriptionBackend:
     """Return the singleton transcription backend instance.
 
     Reads the active engine config (env vars + DB overrides) to decide

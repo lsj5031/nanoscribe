@@ -425,6 +425,42 @@ export async function flushSave(): Promise<void> {
 }
 
 /**
+ * Reload memo data (segments, speakers, memo metadata) in-place without
+ * setting loading=true, so the WaveformPane is not destroyed mid-playback.
+ * Used when an active job transitions to completed via SSE.
+ */
+export async function reloadMemoData(memoId: string): Promise<void> {
+  try {
+    const [memoRes, segRes, speakersRes] = await Promise.all([
+      fetch(`/api/memos/${memoId}`),
+      fetch(`/api/memos/${memoId}/segments`),
+      fetch(`/api/memos/${memoId}/speakers`)
+    ]);
+
+    if (memoRes.ok) {
+      state.memo = await memoRes.json();
+      state.error = null;
+      if (state.memo?.duration_ms) {
+        state.durationMs = state.memo.duration_ms;
+      }
+    }
+
+    if (segRes.ok) {
+      const segData: SegmentsResponse = await segRes.json();
+      state.segments = segData.segments;
+      state.revision = segData.revision;
+    }
+
+    if (speakersRes.ok) {
+      const speakersData = await speakersRes.json();
+      state.speakers = speakersData.speakers ?? [];
+    }
+  } catch {
+    // Silently ignore reload errors — the user already has the existing data
+  }
+}
+
+/**
  * Initialize the editor with a memo ID.
  */
 export async function initEditor(memoId: string): Promise<void> {
@@ -510,8 +546,8 @@ export function connectEditorSSE(jobId: string): void {
     state.jobProgress = null;
     state.jobStage = null;
     state.jobDetail = null;
-    // Reload data after completion
-    if (state.memoId) initEditor(state.memoId);
+    // Reload memo data in-place without destroying the WaveformPane
+    if (state.memoId) reloadMemoData(state.memoId);
     showSuccess('Processing completed');
   });
 
@@ -608,7 +644,7 @@ function _tryReconnectEditorSSE(jobId: string): void {
         state.jobStage = null;
         state.jobDetail = null;
         if (job.status === 'completed' && state.memoId) {
-          initEditor(state.memoId);
+          reloadMemoData(state.memoId);
           showSuccess('Processing completed');
         } else if (job.status === 'failed') {
           showError(`Processing failed: ${job.error_message ?? 'Unknown error'}`);

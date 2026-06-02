@@ -56,7 +56,11 @@
       backend: 'WebAudio'
     });
 
-    instance.load(`/api/memos/${memoId}/audio`);
+    instance.load(`/api/memos/${memoId}/audio`).catch((err) => {
+      // WaveSurfer aborts in-flight fetches on destroy — don't surface as errors
+      if (err?.name === 'AbortError') return;
+      console.error('Failed to load audio waveform:', err);
+    });
 
     instance.on('ready', () => {
       setDurationMs(instance.getDuration() * 1000);

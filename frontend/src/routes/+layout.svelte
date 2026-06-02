@@ -69,6 +69,8 @@
         // Avoid showing duplicate toasts for errors already handled by stores
         if (reason.message.includes('Failed to fetch memo')) return;
         if (reason.message.includes('Failed to load')) return;
+        // AbortError is a normal browser signal (navigation, WaveSurfer destroy, etc.)
+        if (reason.name === 'AbortError') return;
         showError(reason.message);
         return;
       }

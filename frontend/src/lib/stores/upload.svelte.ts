@@ -415,7 +415,9 @@ export function dismissUpload(jobId?: string): void {
 }
 
 /**
- * Cleanup all upload SSE connections (call on unmount).
+ * Cleanup all upload SSE connections and clear stale job data (call on unmount).
+ * Clearing activeJobs ensures the TopBar's active-job count resets to 0
+ * until new uploads are initiated.
  */
 export function cleanup(): void {
   for (const [jobId, es] of sseConnections) {
@@ -427,4 +429,6 @@ export function cleanup(): void {
   }
   _reconnectTimers.clear();
   _reconnectAttempts.clear();
+  state.activeJobs.clear();
+  state.error = null;
 }
