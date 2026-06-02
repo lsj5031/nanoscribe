@@ -3,7 +3,7 @@
   import '../app.css';
   import TopBar from '$lib/components/TopBar.svelte';
   import DropOverlay from '$lib/components/DropOverlay.svelte';
-  import ProcessingOverlay from '$lib/components/ProcessingOverlay.svelte';
+
   import ErrorToast from '$lib/components/ErrorToast.svelte';
   import SearchOverlay from '$lib/components/SearchOverlay.svelte';
   import KeyboardShortcuts from '$lib/components/KeyboardShortcuts.svelte';
@@ -120,7 +120,6 @@
 
 <!-- Global overlays -->
 <DropOverlay />
-<ProcessingOverlay />
 <ErrorToast />
 <SearchOverlay />
 <KeyboardShortcuts />

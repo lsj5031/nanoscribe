@@ -154,7 +154,9 @@
 
 <div class="flex h-full flex-col bg-[#F9F8F6]">
   <!-- Header -->
-  <div class="shrink-0 border-b border-[#1A1A1A]/20 px-12 py-8 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
+  <div
+    class="shrink-0 border-b border-[#1A1A1A]/20 px-4 md:px-12 py-6 md:py-8 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
+  >
     <div class="flex items-center justify-between">
       <h2 class="text-xl font-serif text-[#1A1A1A]">Transcript</h2>
       {#if !searchOpen && hasContent}

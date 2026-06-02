@@ -171,7 +171,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
-  class="w-full cursor-pointer border-l-2 px-12 py-8 text-left transition-all duration-500 ease-luxury {isCurrent
+  class="w-full cursor-pointer border-l-2 px-4 md:px-12 py-6 md:py-8 text-left transition-all duration-500 ease-luxury {isCurrent
     ? 'border-[#D4AF37] bg-[#1A1A1A]/5'
     : isHovered
       ? 'border-[#1A1A1A]/10 bg-transparent'
@@ -181,7 +181,7 @@
   tabindex="-1"
   onclick={handleRowClick}
 >
-  <div class="flex items-start gap-8">
+  <div class="flex items-start gap-4 md:gap-8">
     <!-- Timestamp -->
     <span
       class="shrink-0 font-sans text-xs uppercase tracking-[0.2em] mt-1.5 {isCurrent

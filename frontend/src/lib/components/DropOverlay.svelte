@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import { uploadFiles } from '$lib/stores/upload.svelte';
+  import { fetchMemos } from '$lib/stores/library.svelte';
 
   let dragCounter = $state(0);
   let isDragging = $derived(dragCounter > 0);
@@ -37,7 +38,7 @@
     if (!e.dataTransfer?.files?.length) return;
 
     const files = Array.from(e.dataTransfer.files);
-    uploadFiles(files);
+    uploadFiles(files).then(() => fetchMemos());
   }
 </script>
 

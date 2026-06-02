@@ -17,6 +17,8 @@ export interface MemoCard {
   stage: string | null;
   error_code: string | null;
   error_message: string | null;
+  /** Sub-stage detail, e.g. "Chunk 3/12" during transcription */
+  detail?: string | null;
 }
 
 export type ViewMode = 'grid' | 'list';
@@ -61,6 +63,7 @@ let state = $state<LibraryState>({
 
 // SSE connections for active jobs
 const sseConnections = new Map<string, EventSource>();
+const _jobIds = new Map<string, string>(); // memoId -> jobId
 
 export function getMemos(): MemoCard[] {
   return state.memos;
@@ -257,7 +260,7 @@ function connectActiveJobSSE(): void {
   }
 }
 
-function isActiveStatus(status: string): boolean {
+export function isActiveStatus(status: string): boolean {
   return (
     status === 'queued' ||
     status === 'preprocessing' ||
@@ -272,6 +275,7 @@ function isActiveStatus(status: string): boolean {
  */
 function connectJobSSE(memoId: string, jobId: string): void {
   disconnectSSE(memoId);
+  _jobIds.set(memoId, jobId);
 
   const es = new EventSource(`/api/jobs/${jobId}/events`);
   sseConnections.set(memoId, es);
@@ -282,6 +286,7 @@ function connectJobSSE(memoId: string, jobId: string): void {
     progress?: number;
     error_code?: string;
     error_message?: string;
+    detail?: string | null;
   }) => {
     const memo = state.memos.find((m) => m.id === memoId);
     if (!memo) return;
@@ -290,6 +295,7 @@ function connectJobSSE(memoId: string, jobId: string): void {
     if (data.progress != null) memo.progress = data.progress;
     if (data.error_code != null) memo.error_code = data.error_code;
     if (data.error_message != null) memo.error_message = data.error_message;
+    if (data.detail !== undefined) memo.detail = data.detail;
   };
 
   es.addEventListener('job.stage', (e: MessageEvent) => {
@@ -304,7 +310,14 @@ function connectJobSSE(memoId: string, jobId: string): void {
   es.addEventListener('job.progress', (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      updateMemo(data);
+      let detail: string | null = null;
+      if (data.detail) {
+        const d = data.detail;
+        if (d.chunks_done != null && d.total_chunks != null) {
+          detail = `Chunk ${d.chunks_done}/${d.total_chunks}`;
+        }
+      }
+      updateMemo({ ...data, detail });
     } catch {
       /* ignore */
     }
@@ -353,6 +366,7 @@ function connectMemoPollSSE(memoId: string): void {
     .then((res) => res.json())
     .then((detail) => {
       if (detail.latest_job?.id) {
+        _jobIds.set(memoId, detail.latest_job.id);
         connectJobSSE(memoId, detail.latest_job.id);
       }
     })
@@ -367,6 +381,7 @@ function disconnectSSE(memoId: string): void {
     es.close();
     sseConnections.delete(memoId);
   }
+  _jobIds.delete(memoId);
   // Clean up reconnect state
   const timer = _libReconnectTimers.get(memoId);
   if (timer) {
@@ -549,6 +564,55 @@ export function getStatusLabel(status: string): string {
     default:
       return status;
   }
+}
+
+/**
+ * Cancel a memo's active transcription job.
+ */
+export async function cancelMemo(memoId: string): Promise<void> {
+  let jobId = _jobIds.get(memoId);
+  if (!jobId) {
+    try {
+      const res = await fetch(`/api/memos/${memoId}`);
+      if (!res.ok) return;
+      const detail = await res.json();
+      jobId = detail.latest_job?.id;
+      if (jobId) _jobIds.set(memoId, jobId);
+    } catch {
+      return;
+    }
+  }
+  if (!jobId) return;
+
+  const memo = state.memos.find((m) => m.id === memoId);
+  const prevStatus = memo?.status;
+  if (memo) memo.status = 'cancelled';
+
+  let cancelled = true;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!res.ok && res.status !== 404) {
+      cancelled = false;
+      if (memo && prevStatus) memo.status = prevStatus;
+      showError('Failed to cancel transcription');
+    }
+  } catch {
+    cancelled = false;
+    if (memo && prevStatus) memo.status = prevStatus;
+    showError('Failed to cancel transcription');
+  }
+  if (cancelled) disconnectSSE(memoId);
+}
+
+/**
+ * Get count of memos with active (non-terminal) statuses.
+ */
+export function getActiveJobCount(): number {
+  let count = 0;
+  for (const memo of state.memos) {
+    if (isActiveStatus(memo.status)) count++;
+  }
+  return count;
 }
 
 /**

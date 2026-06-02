@@ -9,7 +9,7 @@
     type ModelReadiness
   } from '$lib/stores/readiness.svelte';
   import { isMediaRecorderSupported } from '$lib/stores/recording.svelte';
-  import { uploadFiles, getActiveUpload } from '$lib/stores/upload.svelte';
+  import { uploadFiles, cleanup as cleanupUpload } from '$lib/stores/upload.svelte';
   import MemoCard from '$lib/components/MemoCard.svelte';
   import LibraryControls from '$lib/components/LibraryControls.svelte';
   import RecordingModal from '$lib/components/RecordingModal.svelte';
@@ -70,7 +70,10 @@
   // Cleanup SSE connections on unmount;
   // initial + reactive fetches are handled by the query/sort/filter $effect below.
   $effect(() => {
-    return () => cleanup();
+    return () => {
+      cleanup();
+      cleanupUpload();
+    };
   });
 
   // Re-fetch when query/sort/filter changes
@@ -80,19 +83,6 @@
     sort;
     statusFilter;
     fetchMemos();
-  });
-
-  // Re-fetch library when upload/processing overlay dismisses
-  // (i.e., when active upload goes from non-null to null)
-  let wasUploading = $state(false);
-  $effect(() => {
-    const active = getActiveUpload();
-    if (active !== null) {
-      wasUploading = true;
-    } else if (wasUploading) {
-      wasUploading = false;
-      fetchMemos();
-    }
   });
 
   // Readiness polling: start when capabilities say not ready
@@ -110,7 +100,7 @@
   function handleFileChange(e: Event) {
     const target = e.target as HTMLInputElement;
     if (target.files?.length) {
-      uploadFiles(Array.from(target.files));
+      uploadFiles(Array.from(target.files)).then(() => fetchMemos());
       target.value = '';
     }
   }

@@ -1,6 +1,7 @@
 /**
  * Upload state management store.
  * Handles file upload via POST /api/memos, SSE progress tracking, and cancellation.
+ * Supports multiple concurrent uploads with per-job SSE connections.
  */
 
 import { showError, showWarning } from '$lib/stores/toasts.svelte';
@@ -20,16 +21,16 @@ export interface UploadJob {
 }
 
 interface UploadState {
-  active: UploadJob | null;
+  activeJobs: Map<string, UploadJob>; // keyed by memoId
   error: string | null;
 }
 
 const SUPPORTED_EXTENSIONS = new Set(['wav', 'mp3', 'm4a', 'aac', 'webm', 'ogg', 'opus']);
 
-let state = $state<UploadState>({ active: null, error: null });
-let eventSource: EventSource | null = null;
-let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let _reconnectAttempts = 0;
+let state = $state<UploadState>({ activeJobs: new Map(), error: null });
+let sseConnections = new Map<string, EventSource>(); // keyed by jobId
+let _reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>(); // keyed by memoId
+let _reconnectAttempts = new Map<string, number>(); // keyed by memoId
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_BASE_DELAY_MS = 1000;
 
@@ -37,8 +38,22 @@ export function getUploadState(): UploadState {
   return state;
 }
 
-export function getActiveUpload(): UploadJob | null {
-  return state.active;
+/**
+ * Get all active upload jobs as a Map keyed by memoId.
+ */
+export function getActiveUploads(): Map<string, UploadJob> {
+  return state.activeJobs;
+}
+
+/**
+ * Get count of non-terminal active upload jobs.
+ */
+export function getActiveUploadCount(): number {
+  let count = 0;
+  for (const job of state.activeJobs.values()) {
+    if (!_isTerminalStatus(job.status)) count++;
+  }
+  return count;
 }
 
 export function getUploadError(): string | null {
@@ -62,10 +77,15 @@ export function getAudioFiles(files: File[]): File[] {
   return files.filter(isAudioFile);
 }
 
+function _isTerminalStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
 /**
  * Upload audio files via POST /api/memos.
- * For single file: sets active upload and tracks progress.
- * For multiple files: uploads all but only tracks the first.
+ * Tracks all returned memos/jobs with per-job SSE connections.
+ * The caller should call library store's fetchMemos() after this resolves
+ * to populate the library view.
  */
 export async function uploadFiles(files: File[]): Promise<void> {
   if (files.length === 0) {
@@ -73,7 +93,6 @@ export async function uploadFiles(files: File[]): Promise<void> {
     return;
   }
 
-  // Filter audio files
   const audioFiles = getAudioFiles(files);
   const unsupported = getUnsupportedFileNames(files);
 
@@ -85,7 +104,6 @@ export async function uploadFiles(files: File[]): Promise<void> {
   }
 
   if (unsupported.length > 0) {
-    // Show warning for unsupported files but continue with valid ones
     showWarning(`Skipped unsupported: ${unsupported.join(', ')}`);
   }
 
@@ -94,7 +112,6 @@ export async function uploadFiles(files: File[]): Promise<void> {
     formData.append('files[]', file);
   }
 
-  // Auto-enable diarization when the capability is available
   const capabilities = getCapabilities();
   if (capabilities.speaker_diarization) {
     formData.append('enable_diarization', 'true');
@@ -115,11 +132,13 @@ export async function uploadFiles(files: File[]): Promise<void> {
     const data = await res.json();
 
     if (data.memos?.length > 0 && data.jobs?.length > 0) {
-      // For single file upload, track the job progress
-      if (data.memos.length === 1) {
-        const memo = data.memos[0];
-        const job = data.jobs[0];
-        state.active = {
+      // Track ALL returned memos/jobs
+      for (let i = 0; i < data.memos.length; i++) {
+        const memo = data.memos[i];
+        const job = data.jobs[i];
+        if (!memo || !job) continue;
+
+        const uploadJob: UploadJob = {
           memoId: memo.id,
           jobId: job.id,
           title: memo.title,
@@ -127,7 +146,8 @@ export async function uploadFiles(files: File[]): Promise<void> {
           stage: job.stage ?? job.status,
           progress: job.progress ?? 0
         };
-        connectSSE(job.id);
+        state.activeJobs.set(memo.id, uploadJob);
+        connectSSE(job.id, memo.id);
       }
     }
   } catch (e) {
@@ -135,44 +155,49 @@ export async function uploadFiles(files: File[]): Promise<void> {
   }
 }
 
-function connectSSE(jobId: string): void {
-  disconnectSSE();
+/**
+ * Connect SSE for a specific job, updating the upload job in real-time.
+ */
+function connectSSE(jobId: string, memoId: string): void {
+  disconnectSSE(jobId, memoId);
 
-  eventSource = new EventSource(`/api/jobs/${jobId}/events`);
+  const es = new EventSource(`/api/jobs/${jobId}/events`);
+  sseConnections.set(jobId, es);
 
-  eventSource.addEventListener('job.stage', (e: MessageEvent) => {
+  const updateJob = (updates: Partial<UploadJob>) => {
+    const job = state.activeJobs.get(memoId);
+    if (!job || job.jobId !== jobId) return;
+    if (updates.status != null) job.status = updates.status;
+    if (updates.stage != null) job.stage = updates.stage;
+    if (updates.progress != null) job.progress = updates.progress;
+    if (updates.error_message != null) job.error_message = updates.error_message;
+    if (updates.detail != null) job.detail = updates.detail;
+  };
+
+  es.addEventListener('job.stage', (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      if (state.active && state.active.jobId === jobId) {
-        state.active = {
-          ...state.active,
-          status: data.status ?? state.active.status,
-          stage: data.stage ?? data.status ?? state.active.stage,
-          progress: data.progress ?? state.active.progress
-        };
-      }
+      updateJob({
+        status: data.status,
+        stage: data.stage ?? data.status,
+        progress: data.progress
+      });
     } catch {
       // ignore parse errors
     }
   });
 
-  eventSource.addEventListener('job.progress', (e: MessageEvent) => {
+  es.addEventListener('job.progress', (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      if (state.active && state.active.jobId === jobId) {
-        let detail: string | undefined;
-        if (data.detail) {
-          const d = data.detail;
-          if (d.chunks_done != null && d.total_chunks != null) {
-            detail = `Chunk ${d.chunks_done}/${d.total_chunks}`;
-          }
+      let detail: string | undefined;
+      if (data.detail) {
+        const d = data.detail;
+        if (d.chunks_done != null && d.total_chunks != null) {
+          detail = `Chunk ${d.chunks_done}/${d.total_chunks}`;
         }
-        state.active = {
-          ...state.active,
-          progress: data.progress ?? state.active.progress,
-          detail
-        };
       }
+      updateJob({ progress: data.progress, detail });
     } catch {
       // ignore parse errors
     }
@@ -181,196 +206,225 @@ function connectSSE(jobId: string): void {
   const handleTerminal = (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      if (state.active && state.active.jobId === jobId) {
-        state.active = {
-          ...state.active,
-          status: data.status ?? 'completed',
-          stage: data.stage ?? data.status ?? 'completed',
-          progress: data.progress ?? 1.0,
-          error_message:
-            data.status === 'failed'
-              ? (data.error_message ?? state.active.error_message)
-              : undefined
-        };
-        // Auto-dismiss after a short delay (longer for failed so user can read error)
-        const delay = data.status === 'failed' ? 4000 : 1500;
-        setTimeout(() => {
-          if (
-            state.active?.jobId === jobId &&
-            (state.active.status === 'completed' ||
-              state.active.status === 'failed' ||
-              state.active.status === 'cancelled')
-          ) {
-            dismissUpload();
-          }
-        }, delay);
-      }
+      updateJob({
+        status: data.status ?? 'completed',
+        stage: data.stage ?? data.status ?? 'completed',
+        progress: data.progress ?? 1.0,
+        error_message:
+          data.status === 'failed'
+            ? (data.error_message ?? state.activeJobs.get(memoId)?.error_message)
+            : undefined
+      });
+      // Auto-dismiss this job after a delay
+      const delay = data.status === 'failed' ? 4000 : 1500;
+      setTimeout(() => {
+        const job = state.activeJobs.get(memoId);
+        if (job && _isTerminalStatus(job.status)) {
+          state.activeJobs.delete(memoId);
+        }
+      }, delay);
+      disconnectSSE(jobId, memoId);
     } catch {
       // ignore parse errors
     }
-    disconnectSSE();
   };
 
-  eventSource.addEventListener('job.completed', handleTerminal);
-  eventSource.addEventListener('job.failed', handleTerminal);
-  eventSource.addEventListener('job.cancelled', handleTerminal);
+  es.addEventListener('job.completed', handleTerminal);
+  es.addEventListener('job.failed', handleTerminal);
+  es.addEventListener('job.cancelled', handleTerminal);
 
-  eventSource.onerror = () => {
-    // SSE connection lost — try to reconnect after a delay
-    disconnectSSE();
-    _tryReconnectSSE(jobId);
+  es.onerror = () => {
+    disconnectSSE(jobId, memoId);
+    _tryReconnectSSE(jobId, memoId);
   };
 }
 
 /**
  * Attempt to reconnect SSE after a connection drop.
- * Polls the job status first; if still active, reconnects SSE.
- * Uses exponential backoff up to MAX_RECONNECT_ATTEMPTS.
  */
-function _tryReconnectSSE(jobId: string): void {
-  if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    // Give up reconnecting — poll one last time to get final status
-    _finalPollJobStatus(jobId);
+function _tryReconnectSSE(jobId: string, memoId: string): void {
+  const attempts = _reconnectAttempts.get(memoId) ?? 0;
+  if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+    _finalPollJobStatus(jobId, memoId);
     return;
   }
 
-  _reconnectAttempts++;
-  const delay = RECONNECT_BASE_DELAY_MS * Math.pow(1.5, _reconnectAttempts - 1);
+  _reconnectAttempts.set(memoId, attempts + 1);
+  const delay = RECONNECT_BASE_DELAY_MS * Math.pow(1.5, attempts);
 
-  _reconnectTimer = setTimeout(async () => {
-    _reconnectTimer = null;
-    // Check if the job is still active before reconnecting
+  const timer = setTimeout(async () => {
+    _reconnectTimers.delete(memoId);
     try {
       const res = await fetch(`/api/jobs/${jobId}`);
-      if (!res.ok) return; // Job not found, stop reconnecting
+      if (!res.ok) return;
       const job = await res.json();
 
-      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-        // Job finished while we were disconnected — update state directly
-        if (state.active && state.active.jobId === jobId) {
-          state.active = {
-            ...state.active,
-            status: job.status,
-            stage: job.status,
-            progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress)
-          };
-          // Auto-dismiss after a short delay
+      if (_isTerminalStatus(job.status)) {
+        const uploadJob = state.activeJobs.get(memoId);
+        if (uploadJob) {
+          uploadJob.status = job.status;
+          uploadJob.stage = job.status;
+          uploadJob.progress = job.status === 'completed' ? 1.0 : uploadJob.progress;
+          if (job.status === 'failed') {
+            uploadJob.error_message = job.error_message ?? uploadJob.error_message;
+          }
           setTimeout(() => {
             if (
-              state.active?.jobId === jobId &&
-              (state.active.status === 'completed' ||
-                state.active.status === 'failed' ||
-                state.active.status === 'cancelled')
+              state.activeJobs.get(memoId) &&
+              _isTerminalStatus(state.activeJobs.get(memoId)!.status)
             ) {
-              state.active = null;
+              state.activeJobs.delete(memoId);
             }
           }, 1500);
         }
-        return; // No need to reconnect
+        return;
       }
 
-      // Job is still active — reconnect SSE
-      _reconnectAttempts = 0; // Reset on successful poll
-      connectSSE(jobId);
+      _reconnectAttempts.delete(memoId);
+      connectSSE(jobId, memoId);
     } catch {
-      // Fetch failed — try again
-      _tryReconnectSSE(jobId);
+      _tryReconnectSSE(jobId, memoId);
     }
   }, delay);
+
+  _reconnectTimers.set(memoId, timer);
 }
 
-function disconnectSSE(): void {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+function disconnectSSE(jobId: string, memoId: string): void {
+  const es = sseConnections.get(jobId);
+  if (es) {
+    es.close();
+    sseConnections.delete(jobId);
   }
-  if (_reconnectTimer) {
-    clearTimeout(_reconnectTimer);
-    _reconnectTimer = null;
+  const timer = _reconnectTimers.get(memoId);
+  if (timer) {
+    clearTimeout(timer);
+    _reconnectTimers.delete(memoId);
   }
-  _reconnectAttempts = 0;
+  _reconnectAttempts.delete(memoId);
 }
 
 /**
- * Final fallback: poll the job status one last time after SSE reconnect gives up.
- * If the job is done, update the UI; otherwise clear the overlay so the user isn't stuck.
+ * Final fallback: poll the job status after SSE reconnect gives up.
  */
-async function _finalPollJobStatus(jobId: string): Promise<void> {
+async function _finalPollJobStatus(jobId: string, memoId: string): Promise<void> {
   try {
     const res = await fetch(`/api/jobs/${jobId}`);
     if (!res.ok) {
-      // Job not found — clear overlay
-      state.active = null;
+      state.activeJobs.delete(memoId);
       return;
     }
     const job = await res.json();
+    const uploadJob = state.activeJobs.get(memoId);
+    if (!uploadJob) return;
 
-    if (state.active && state.active.jobId === jobId) {
-      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-        state.active = {
-          ...state.active,
-          status: job.status,
-          stage: job.status,
-          progress: job.status === 'completed' ? 1.0 : (job.progress ?? state.active.progress),
-          error_message:
-            job.status === 'failed' ? (job.error_message ?? state.active.error_message) : undefined
-        };
-        // Auto-dismiss (longer for failed)
-        const delay = job.status === 'failed' ? 4000 : 1500;
-        setTimeout(() => {
-          if (
-            state.active?.jobId === jobId &&
-            (state.active.status === 'completed' ||
-              state.active.status === 'failed' ||
-              state.active.status === 'cancelled')
-          ) {
-            dismissUpload();
-          }
-        }, delay);
-      } else {
-        // Job still running but SSE is dead — show a warning
-        // and let the user cancel/dismiss
-        showWarning('Lost connection — you can cancel and retry from the library');
+    if (_isTerminalStatus(job.status)) {
+      uploadJob.status = job.status;
+      uploadJob.stage = job.status;
+      uploadJob.progress = job.status === 'completed' ? 1.0 : uploadJob.progress;
+      if (job.status === 'failed') {
+        uploadJob.error_message = job.error_message ?? uploadJob.error_message;
       }
+      const delay = job.status === 'failed' ? 4000 : 1500;
+      setTimeout(() => {
+        if (
+          state.activeJobs.get(memoId) &&
+          _isTerminalStatus(state.activeJobs.get(memoId)!.status)
+        ) {
+          state.activeJobs.delete(memoId);
+        }
+      }, delay);
+    } else {
+      showWarning('Lost connection — you can cancel and retry from the library');
     }
   } catch {
-    // Can't reach server — clear overlay
-    state.active = null;
+    state.activeJobs.delete(memoId);
   }
 }
 
 /**
- * Cancel the active upload's job.
+ * Cancel the current active upload job.
+ * Accepts optional jobId for new callers; falls back to first active for legacy callers.
  */
-export async function cancelUpload(): Promise<void> {
-  if (!state.active) return;
+export async function cancelUpload(jobId?: string): Promise<void> {
+  // Find the job by jobId or fall back to first active
+  let memoId: string | null = null;
+  let targetJobId: string | null = jobId ?? null;
+  if (!targetJobId) {
+    for (const [mid, job] of state.activeJobs) {
+      if (!_isTerminalStatus(job.status)) {
+        memoId = mid;
+        targetJobId = job.jobId;
+        break;
+      }
+    }
+  } else {
+    for (const [mid, job] of state.activeJobs) {
+      if (job.jobId === targetJobId) {
+        memoId = mid;
+        break;
+      }
+    }
+  }
+  if (!memoId || !targetJobId) return;
 
   try {
-    const res = await fetch(`/api/jobs/${state.active.jobId}/cancel`, { method: 'POST' });
+    const res = await fetch(`/api/jobs/${targetJobId}/cancel`, { method: 'POST' });
     if (res.ok) {
-      state.active = {
-        ...state.active,
-        status: 'cancelled',
-        stage: 'cancelled'
-      };
-      disconnectSSE();
+      const job = state.activeJobs.get(memoId);
+      if (job) {
+        job.status = 'cancelled';
+        job.stage = 'cancelled';
+      }
+      disconnectSSE(targetJobId, memoId);
       setTimeout(() => {
-        if (state.active?.status === 'cancelled') {
-          state.active = null;
-        }
+        state.activeJobs.delete(memoId);
       }, 1000);
     }
   } catch {
-    // Even if cancel fails, clean up local state
-    disconnectSSE();
-    state.active = null;
+    disconnectSSE(targetJobId, memoId);
+    state.activeJobs.delete(memoId);
   }
 }
 
 /**
- * Dismiss the active upload overlay (e.g., user clicked away after completion).
+ * Dismiss an upload job, removing it from the active map.
+ * Accepts optional jobId for new callers; falls back to first active for legacy callers.
  */
-export function dismissUpload(): void {
-  disconnectSSE();
-  state.active = null;
+export function dismissUpload(jobId?: string): void {
+  let memoId: string | null = null;
+  if (jobId) {
+    for (const [mid, job] of state.activeJobs) {
+      if (job.jobId === jobId) {
+        memoId = mid;
+        break;
+      }
+    }
+  } else {
+    for (const [mid, job] of state.activeJobs) {
+      if (!_isTerminalStatus(job.status)) {
+        memoId = mid;
+        break;
+      }
+    }
+  }
+  if (!memoId) return;
+  const job = state.activeJobs.get(memoId)!;
+  disconnectSSE(job.jobId, memoId);
+  state.activeJobs.delete(memoId);
+}
+
+/**
+ * Cleanup all upload SSE connections (call on unmount).
+ */
+export function cleanup(): void {
+  for (const [jobId, es] of sseConnections) {
+    es.close();
+  }
+  sseConnections.clear();
+  for (const [, timer] of _reconnectTimers) {
+    clearTimeout(timer);
+  }
+  _reconnectTimers.clear();
+  _reconnectAttempts.clear();
 }

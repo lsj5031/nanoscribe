@@ -14,6 +14,8 @@
     getStatusLabel,
     retryMemo,
     deleteMemo,
+    cancelMemo,
+    isActiveStatus,
     type MemoCard as MemoCardType,
     type ViewMode
   } from '$lib/stores/library.svelte';
@@ -26,6 +28,7 @@
   let { memo, viewMode }: Props = $props();
 
   let retrying = $state(false);
+  let cancelling = $state(false);
   let showDeleteConfirm = $state(false);
 
   function handleClick(e: MouseEvent) {
@@ -60,14 +63,16 @@
     showDeleteConfirm = false;
   }
 
+  async function handleCancel(e: MouseEvent) {
+    e.stopPropagation();
+    if (cancelling) return;
+    cancelling = true;
+    await cancelMemo(memo.id);
+    cancelling = false;
+  }
+
   const isFailed = $derived(memo.status === 'failed' || memo.status === 'cancelled');
-  const isActive = $derived(
-    memo.status === 'queued' ||
-      memo.status === 'preprocessing' ||
-      memo.status === 'transcribing' ||
-      memo.status === 'diarizing' ||
-      memo.status === 'finalizing'
-  );
+  const isActive = $derived(isActiveStatus(memo.status));
   const progressPct = $derived(Math.round(memo.progress * 100));
 </script>
 
@@ -114,14 +119,28 @@
         </span>
       {/if}
 
-      <!-- Active indicator -->
+      <!-- Active indicator with cancel + detail -->
       {#if isActive}
         <div class="absolute left-3 top-3 flex items-center gap-2">
           <div class="h-2 w-2 animate-pulse rounded-none bg-accent"></div>
           <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium">
             {getStatusLabel(memo.status)}
           </span>
+          {#if memo.detail}
+            <span class="text-xs tracking-[0.1em] text-accent/70">
+              · {memo.detail}
+            </span>
+          {/if}
         </div>
+        <button
+          onclick={handleCancel}
+          disabled={cancelling}
+          class="absolute right-3 top-3 rounded-none border border-text-primary/20 bg-surface-900/80 px-2 py-1 text-xs uppercase tracking-[0.2em] text-text-primary/80 transition-all duration-500 ease-luxury hover:text-error hover:border-error/40 disabled:opacity-50"
+          data-action="cancel"
+          aria-label="Cancel transcription"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel'}
+        </button>
       {/if}
     </div>
 
@@ -289,6 +308,20 @@
         <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium tabular-nums">
           {progressPct}%
         </span>
+        {#if memo.detail}
+          <span class="text-xs tracking-[0.1em] text-accent/70">
+            · {memo.detail}
+          </span>
+        {/if}
+        <button
+          onclick={handleCancel}
+          disabled={cancelling}
+          class="rounded-none px-2 py-1 text-xs uppercase tracking-[0.2em] text-text-muted transition-colors duration-500 ease-luxury hover:text-error disabled:opacity-50"
+          data-action="cancel"
+          aria-label="Cancel transcription"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel'}
+        </button>
       </div>
     {:else}
       <!-- Status badge for completed/failed memos -->

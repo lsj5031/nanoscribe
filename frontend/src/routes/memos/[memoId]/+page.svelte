@@ -36,6 +36,19 @@
   } from '$lib/stores/editor.svelte';
   import { getStatusLabel } from '$lib/stores/library.svelte';
 
+  let isDesktop = $state(false);
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(min-width: 768px)');
+    isDesktop = mql.matches;
+    const handler = (e: MediaQueryListEvent) => {
+      isDesktop = e.matches;
+    };
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  });
+
   let waveformPane: WaveformPane | undefined = $state();
   let transcriptPane: TranscriptPane | undefined = $state();
   let containerEl: HTMLDivElement | undefined = $state();
@@ -312,7 +325,9 @@
 {:else}
   <div class="flex h-full flex-col bg-[#F9F8F6] font-sans text-[#1A1A1A]">
     <!-- Floating toolbar -->
-    <div class="flex shrink-0 items-center gap-8 border-b border-[#1A1A1A]/20 px-12 py-8">
+    <div
+      class="flex shrink-0 flex-wrap items-center gap-4 md:gap-8 border-b border-[#1A1A1A]/20 px-4 md:px-12 py-4 md:py-8"
+    >
       <button
         onclick={goBack}
         class="flex items-center gap-2 p-2 text-[#1A1A1A]/60 transition-colors duration-500 ease-luxury hover:text-[#D4AF37] rounded-none"
@@ -399,7 +414,7 @@
     <!-- Processing progress banner (visible below toolbar when job is active) -->
     {#if jobProgress !== null}
       <div
-        class="flex shrink-0 items-center gap-4 border-b border-[#1A1A1A]/10 bg-[#D4AF37]/5 px-12 py-2"
+        class="flex shrink-0 items-center gap-4 border-b border-[#1A1A1A]/10 bg-[#D4AF37]/5 px-4 md:px-12 py-2"
       >
         <div class="h-1.5 flex-1 overflow-hidden bg-[#1A1A1A]/10 rounded-none">
           {#if jobProgress > 0 && jobProgress < 0.2}
@@ -428,11 +443,14 @@
     {/if}
 
     <!-- Two-pane layout -->
-    <div bind:this={containerEl} class="relative flex flex-1 overflow-hidden p-0 gap-0">
+    <div
+      bind:this={containerEl}
+      class="relative flex flex-col md:flex-row flex-1 overflow-hidden p-0 gap-0"
+    >
       <!-- Left pane: Waveform & Transport -->
       <div
-        class="flex shrink-0 flex-col overflow-hidden border-r border-[#1A1A1A]/20 bg-[#F9F8F6] shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
-        style="width: {leftPct}%"
+        class="flex shrink-0 flex-col overflow-hidden border-b md:border-b-0 md:border-r border-[#1A1A1A]/20 bg-[#F9F8F6] shadow-[0_2px_8px_rgba(0,0,0,0.02)] h-[45vh] md:h-auto"
+        style={isDesktop ? `width: ${leftPct}%` : ''}
       >
         <WaveformPane bind:this={waveformPane} />
       </div>
@@ -440,7 +458,7 @@
       <!-- Resizable divider -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
-        class="group relative z-10 flex w-8 shrink-0 cursor-col-resize items-center justify-center bg-[#F9F8F6] transition-colors duration-500 ease-luxury hover:bg-[#1A1A1A]/5 {isDragging
+        class="group relative z-10 hidden md:flex w-8 shrink-0 cursor-col-resize items-center justify-center bg-[#F9F8F6] transition-colors duration-500 ease-luxury hover:bg-[#1A1A1A]/5 {isDragging
           ? 'bg-[#1A1A1A]/5'
           : ''}"
         onmousedown={handleDividerMouseDown}
@@ -458,7 +476,7 @@
       </div>
 
       <!-- Right pane: Transcript -->
-      <div class="min-w-0 flex-1 overflow-hidden bg-[#F9F8F6]">
+      <div class="min-h-0 md:min-w-0 flex-1 overflow-hidden bg-[#F9F8F6]">
         <TranscriptPane bind:this={transcriptPane} />
       </div>
     </div>

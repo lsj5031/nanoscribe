@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { openSearch } from '$lib/stores/search.svelte';
+  import { getActiveUploadCount } from '$lib/stores/upload.svelte';
+  import { getActiveJobCount } from '$lib/stores/library.svelte';
 
   function navigateToSettings() {
     goto('/settings');
@@ -9,6 +11,8 @@
   function navigateToHome() {
     goto('/');
   }
+
+  const activeCount = $derived(getActiveUploadCount() + getActiveJobCount());
 </script>
 
 <header
@@ -46,6 +50,16 @@
       <span class="font-serif italic text-[#6C6863]">Search…</span>
       <kbd class="text-[10px] tracking-[0.2em] uppercase text-text-primary ml-4">⌘K</kbd>
     </button>
+
+    <!-- Active jobs indicator pill -->
+    {#if activeCount > 0}
+      <div class="flex h-10 items-center gap-2 border-b border-accent/30 px-0 py-2">
+        <div class="h-2 w-2 animate-pulse rounded-none bg-accent"></div>
+        <span class="text-xs uppercase tracking-[0.2em] text-accent font-medium tabular-nums">
+          {activeCount} active
+        </span>
+      </div>
+    {/if}
 
     <!-- Settings -->
     <button

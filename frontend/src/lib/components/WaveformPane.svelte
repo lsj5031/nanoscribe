@@ -195,16 +195,16 @@
 <div class="flex h-full flex-col bg-[#F9F8F6]">
   <!-- Waveform -->
   <div
-    class="flex-1 overflow-x-auto px-12 pt-12 transition-all duration-500 ease-luxury {isPlaying
+    class="flex-1 overflow-x-auto px-4 md:px-12 pt-4 md:pt-12 transition-all duration-500 ease-luxury {isPlaying
       ? 'grayscale-0 opacity-100'
       : 'grayscale opacity-70'} hover:grayscale-0 hover:opacity-100"
   >
-    <div bind:this={waveformContainer} class="h-full min-h-[200px]"></div>
+    <div bind:this={waveformContainer} class="h-full min-h-[120px] md:min-h-[200px]"></div>
   </div>
 
   <!-- Speaker segment band -->
   <div
-    class="px-12 py-8 transition-all duration-500 ease-luxury {isPlaying
+    class="px-4 md:px-12 py-4 md:py-8 transition-all duration-500 ease-luxury {isPlaying
       ? 'grayscale-0 opacity-100'
       : 'grayscale opacity-70'} hover:grayscale-0 hover:opacity-100"
   >
@@ -213,7 +213,7 @@
 
   <!-- Transport bar -->
   <div
-    class="flex items-center gap-12 border-t border-[#1A1A1A]/20 bg-[#F9F8F6] px-12 py-8 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
+    class="flex flex-wrap items-center gap-4 md:gap-12 border-t border-[#1A1A1A]/20 bg-[#F9F8F6] px-4 md:px-12 py-4 md:py-8 shadow-[0_2px_8px_rgba(0,0,0,0.02)]"
   >
     <!-- Play/Pause -->
     <button
