@@ -14,7 +14,14 @@
 
   let { children } = $props();
 
-  const webManifest = $derived(pwaInfo ? pwaInfo.webManifest.linkTag : '');
+  const webManifest = $derived(
+    pwaInfo
+      ? pwaInfo.webManifest.linkTag.replace(
+          /href=["']\.{0,2}\/?manifest\.webmanifest["']/,
+          'href="/manifest.webmanifest"'
+        )
+      : ''
+  );
 
   // Fetch capabilities on app load
   $effect(() => {
