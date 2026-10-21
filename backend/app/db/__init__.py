@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Generator
 
 from app.db.migrate import run_migrations  # noqa: F401
 
@@ -15,7 +15,7 @@ def db_connection(
     db_path: str | Path,
     *,
     row_factory: type | None = None,
-) -> Iterator[sqlite3.Connection]:
+) -> Generator[sqlite3.Connection, None, None]:
     """Context manager for SQLite connections with WAL mode and foreign keys.
 
     Ensures the connection is always closed, even if an exception occurs.

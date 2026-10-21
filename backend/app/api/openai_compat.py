@@ -20,7 +20,7 @@ from pathlib import Path
 
 import structlog
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
-from starlette.responses import PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from app.core.config import get_settings
 from app.schemas.openai_compat import (
@@ -203,7 +203,7 @@ async def transcribe_audio(
         return PlainTextResponse(content=text)
 
     if response_format == "json":
-        return SimpleJsonResponse(text=text).model_dump()
+        return JSONResponse(content=SimpleJsonResponse(text=text).model_dump())
 
     if response_format == "srt":
         return PlainTextResponse(content=_segments_to_srt(segments), media_type="text/srt")
@@ -236,14 +236,16 @@ async def transcribe_audio(
     if include_words and raw_output:
         words = _extract_words_from_raw(raw_output)
 
-    return VerboseJsonResponse(
-        task="transcribe",
-        language=language or "en",
-        duration=duration,
-        text=text,
-        words=words,
-        segments=seg_items,
-    ).model_dump()
+    return JSONResponse(
+        content=VerboseJsonResponse(
+            task="transcribe",
+            language=language or "en",
+            duration=duration,
+            text=text,
+            words=words,
+            segments=seg_items,
+        ).model_dump()
+    )
 
 
 # ---------------------------------------------------------------------------

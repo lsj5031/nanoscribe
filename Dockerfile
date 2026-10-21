@@ -120,7 +120,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); if (major !== 22 || minor < 23 || (minor === 23 && patch < 4)) { throw new Error("Node.js 22.23.4 or newer on the 22.x line is required"); }' \
     && corepack enable \
-    && corepack prepare pnpm@latest --activate \
+    && corepack prepare pnpm@10.33.0 --activate \
     && rm -rf /var/lib/apt/lists/*
 
 RUN /app/venv/bin/pip install \
@@ -137,7 +137,7 @@ COPY --chown=appuser:appuser backend/ /app/backend/
 COPY --chown=appuser:appuser frontend/ /app/frontend/
 
 RUN cd /app/backend && /app/venv/bin/pip install --no-cache-dir -e ".[dev]" || true
-RUN cd /app/frontend && pnpm install --frozen-lockfile 2>/dev/null || pnpm install || true
+RUN cd /app/frontend && pnpm install --frozen-lockfile
 
 ENV HF_HUB_OFFLINE=0 \
     MODELSCOPE_CACHE=/app/data/.modelscope_cache \
@@ -151,7 +151,7 @@ CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "
 # ---------------------------------------------------------------------------
 FROM node:22.23.4-bookworm-slim AS frontend-build
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
