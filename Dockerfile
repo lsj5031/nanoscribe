@@ -118,6 +118,7 @@ USER root
 
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
+    && node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); if (major !== 22 || minor < 23 || (minor === 23 && patch < 4)) { throw new Error("Node.js 22.23.4 or newer on the 22.x line is required"); }' \
     && corepack enable \
     && corepack prepare pnpm@latest --activate \
     && rm -rf /var/lib/apt/lists/*
@@ -148,7 +149,7 @@ CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "
 # Stage 4: frontend-build — build the SvelteKit SPA
 # Kept separate so the production image doesn't carry Node/pnpm.
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS frontend-build
+FROM node:22.23.4-bookworm-slim AS frontend-build
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
